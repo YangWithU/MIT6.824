@@ -64,7 +64,7 @@ func main() {
 	//
 	// call Reduce on each distinct key in intermediate[],
 	// and print the result to mr-out-0.
-	//
+	// two pointers algo
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1

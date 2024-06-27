@@ -5,7 +5,7 @@
 #
 
 # un-comment this to run the tests with the Go race detector.
-# RACE=-race
+RACE=-race
 
 if [[ "$OSTYPE" = "darwin"* ]]
 then
@@ -19,9 +19,13 @@ then
   fi
 fi
 
+# 将脚本的第一个参数赋值给变量 ISQUIET
 ISQUIET=$1
+# 函数 maybe_quiet()
 maybe_quiet() {
     if [ "$ISQUIET" == "quiet" ]; then
+      # 如果 ISQUIET 等于 "quiet"，则将传递给 maybe_quiet 函数的所有参数（即 $@）执行，
+      # 并将标准输出和标准错误输出重定向到 /dev/null，这样就不会在终端显示任何输出
       "$@" > /dev/null 2>&1
     else
       "$@"
@@ -31,11 +35,13 @@ maybe_quiet() {
 
 TIMEOUT=timeout
 TIMEOUT2=""
-if timeout 2s sleep 1 > /dev/null 2>&1
+# 尝试使用 timeout 命令运行 sleep 1 命令，并设置超时时间为 2 秒
+# 将输出和错误重定向到 /dev/null，即不显示输出
+if timeout 2s sleep 1 > /dev/null 2>&1 
 then
-  :
+  : # 什么都不做
 else
-  if gtimeout 2s sleep 1 > /dev/null 2>&1
+  if gtimeout 2s sleep 1 > /dev/null 2>&1 # gtimeout: macos func
   then
     TIMEOUT=gtimeout
   else
@@ -47,19 +53,20 @@ fi
 if [ "$TIMEOUT" != "" ]
 then
   TIMEOUT2=$TIMEOUT
-  TIMEOUT2+=" -k 2s 120s "
-  TIMEOUT+=" -k 2s 45s "
+  TIMEOUT2+=" -k 2s 120s " # 在 120 秒后强制终止命令，并在 2 秒后强制终止进程
+  TIMEOUT+=" -k 2s 45s " # 在 45 秒后强制终止命令，并在 2 秒后强制终止进程
 fi
 
 # run the test in a fresh sub-directory.
 rm -rf mr-tmp
-mkdir mr-tmp || exit 1
+mkdir mr-tmp || exit 1 # mkdir失败则exit 1
 cd mr-tmp || exit 1
 rm -f mr-*
 
 # make sure software is freshly built.
-(cd ../../mrapps && go clean)
+(cd ../../mrapps && go clean) # cd /mrapps跑go clean
 (cd .. && go clean)
+# 依次编译出MapReduce应用
 (cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
 (cd ../../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
 (cd ../../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
@@ -78,6 +85,9 @@ failed_any=0
 # first word-count
 
 # generate the correct output
+
+# 安装wc.so，对所有pg跑mrsequential
+# 结果存到mr-correct-wc.txt
 ../mrsequential ../../mrapps/wc.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-wc.txt
 rm -f mr-out*

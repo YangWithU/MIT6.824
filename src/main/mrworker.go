@@ -6,6 +6,9 @@ package main
 // multiple worker processes, talking to one coordinator.
 //
 // go run mrworker.go wc.so
+
+// go run -race -gcflags="all=-N -l" mrworker.go wc.so
+
 //
 // Please do not change this file.
 //

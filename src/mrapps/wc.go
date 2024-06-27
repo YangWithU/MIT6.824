@@ -4,6 +4,7 @@ package main
 // a word-count application "plugin" for MapReduce.
 //
 // go build -buildmode=plugin wc.go
+// go build -race -buildmode=plugin -gcflags="all=-N -l" ../mrapps/wc.go
 //
 
 import "6.5840/mr"
