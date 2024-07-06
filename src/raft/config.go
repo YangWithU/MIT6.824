@@ -137,6 +137,8 @@ func (cfg *config) crash1(i int) {
 	}
 }
 
+// 遍历cfg.logs,根据ApplyMsg的CommandIndex取出logs旧command,
+// 比较,将log中command更新成ApplyMsg的Command
 func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
 	err_msg := ""
 	v := m.Command

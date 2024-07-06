@@ -94,6 +94,9 @@ rm -f mr-out*
 
 echo '***' Starting wc test.
 
+# 等45秒，启动mrcoordinator
+# $TIMEOUT == timeout -k 2s 45s
+# $TIMEOUT2 == timeout -k 2s 120s
 maybe_quiet $TIMEOUT ../mrcoordinator ../pg*txt &
 pid=$!
 
@@ -110,6 +113,7 @@ wait $pid
 
 # since workers are required to exit when a job is completely finished,
 # and not before, that means the job has finished.
+# 对所有匹配 file* 模式的文件进行排序,过滤出包含至少一个字符的行(即非空行),将结果写入到 file-all 文件中
 sort mr-out* | grep . > mr-wc-all
 if cmp mr-wc-all mr-correct-wc.txt
 then
