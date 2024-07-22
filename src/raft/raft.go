@@ -85,10 +85,12 @@ type Raft struct {
 	lastHeartbeat    time.Time
 
 	log          Log
-	peerTrackers []*PeerTracker
+	peerTrackers []PeerTracker // 跟踪每个peer的next index 和 match index.
 
 	applyCh                chan<- ApplyMsg
 	hasNewCommittedEntries sync.Cond
+
+	logger *Logger
 }
 
 // return currentTerm and whether this server
@@ -257,27 +259,32 @@ func (rf *Raft) ticker() {
 		//ms := 50 + (rand.Int63() % 300)
 		//time.Sleep(time.Duration(ms) * time.Millisecond)
 
-		Debug(dTimer, "ticker() tick!")
+		//Debug(dTimer, "ticker() tick!")
 		rf.mu.Lock()
 
 		switch rf.state {
 		case Follower:
 			fallthrough
 		case Candidate:
-			// do nothing, waits
-			// 一段时间没收到Leader的
-			//Debug(dInfo, "rf peer (", rf.me, ")", "run as :", rf.state)
 
 			if rf.isLastElectionTimeout() {
-				Debug(dTimer, "isLastElectionTimeout() rf peer %v election timeout, broadcast request vote become candidate", rf.me)
+				//Debug(dTimer, "isLastElectionTimeout() rf peer %v election timeout, broadcast request vote become candidate", rf.me)
+				rf.logger.elecTimeout()
 				rf.becomeCandidate()
 				rf.broadcastRequestVote()
 				rf.resetElectionTimer()
 			}
 
 		case Leader:
+			if !rf.isQuorumPeerActive() {
+				rf.logger.stepDown()
+				rf.becomeFollower(rf.currentTerm, true)
+				break
+			}
+
 			if rf.isLastHeartbeatTimeout() {
-				Debug(dTimer, "isLastHeartbeatTimeout(): rf peer %v now as Leader sending heartbeat", rf.me)
+				//Debug(dTimer, "isLastHeartbeatTimeout(): rf peer %v now as Leader sending heartbeat", rf.me)
+				rf.logger.beatTimeout()
 				rf.broadcastHeartbeat()
 				rf.resetHeartbeatTimer()
 			}
@@ -306,13 +313,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C).
 
+	rf.logger = makeLogger(true, "new_log.txt")
+	rf.logger.r = rf
+
 	rf.mu = sync.Mutex{}
 
 	rf.applyCh = applyCh
 	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
 
 	rf.log = makeLog()
-	rf.resetPeerTrackers()
+	rf.peerTrackers = make([]PeerTracker, len(peers))
+	rf.resetTrackedIndexes()
 
 	// vote
 	rf.state = Follower // start as follower
@@ -320,10 +331,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.resetVote()
 
 	// time
-	rf.resetElectionTimer()
 	rf.heartbeatTimeout = HeartbeatTimeout
 	rf.resetHeartbeatTimer()
 
+	rf.becomeFollower(0, true)
 	// initialize from state persisted before a crash
 	// rf.readPersist(persister.ReadRaftState())
 

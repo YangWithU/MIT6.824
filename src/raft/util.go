@@ -8,25 +8,25 @@ import (
 	"time"
 )
 
-type logTopic string
+type ulogTopic string
 
 const (
-	dClient  logTopic = "CLNT"
-	dCommit  logTopic = "CMIT"
-	dDrop    logTopic = "DROP"
-	dError   logTopic = "ERRO"
-	dInfo    logTopic = "INFO"
-	dLeader  logTopic = "LEAD"
-	dLog     logTopic = "LOG1"
-	dLog2    logTopic = "LOG2"
-	dPersist logTopic = "PERS"
-	dSnap    logTopic = "SNAP"
-	dTerm    logTopic = "TERM"
-	dTest    logTopic = "TEST"
-	dTimer   logTopic = "TIMR"
-	dTrace   logTopic = "TRCE"
-	dVote    logTopic = "VOTE"
-	dWarn    logTopic = "WARN"
+	dClient  ulogTopic = "CLNT"
+	dCommit  ulogTopic = "CMIT"
+	dDrop    ulogTopic = "DROP"
+	dError   ulogTopic = "ERRO"
+	dInfo    ulogTopic = "INFO"
+	dLeader  ulogTopic = "LEAD"
+	dLog     ulogTopic = "LOG1"
+	dLog2    ulogTopic = "LOG2"
+	dPersist ulogTopic = "PERS"
+	dSnap    ulogTopic = "SNAP"
+	dTerm    ulogTopic = "TERM"
+	dTest    ulogTopic = "TEST"
+	dTimer   ulogTopic = "TIMR"
+	dTrace   ulogTopic = "TRCE"
+	dVote    ulogTopic = "VOTE"
+	dWarn    ulogTopic = "WARN"
 )
 
 var debugStart time.Time
@@ -55,6 +55,13 @@ func init() {
 
 func Debug(topic logTopic, format string, a ...interface{}) {
 	if debugVerbosity >= 1 {
+		logFile, err := os.OpenFile("log.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+		defer logFile.Close()
+		if err != nil {
+			log.Fatalf("Failed to open log file: %v", err)
+		}
+		log.SetOutput(logFile)
+
 		time := time.Since(debugStart).Microseconds()
 		time /= 100
 		prefix := fmt.Sprintf("%06d %v ", time, string(topic))

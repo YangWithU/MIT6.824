@@ -23,19 +23,22 @@ func (rf *Raft) handleHeartbeatReply(reply *HeartBeatReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	rf.peerTrackers[reply.From].lastAck = time.Now()
+
 	if reply.Term > rf.currentTerm {
-		rf.becomeFollower(reply.Term)
+		rf.becomeFollower(reply.Term, false)
 	}
 }
 
 func (rf *Raft) sendHeartbeatAndHandle(args *HeartBeatArgs) {
-	reply := &HeartBeatReply{}
-	if ok := rf.peers[args.To].Call("Raft.Heartbeat", args, reply); ok {
-		rf.handleHeartbeatReply(reply)
+	reply := HeartBeatReply{}
+	if ok := rf.peers[args.To].Call("Raft.Heartbeat", args, &reply); ok {
+		rf.handleHeartbeatReply(&reply)
 	}
 }
 
 func (rf *Raft) broadcastHeartbeat() {
+	rf.logger.bcastHBET()
 	for idx := range rf.peers {
 		if idx != rf.me {
 			args := rf.makeHeartBeatArgs(idx)
@@ -48,6 +51,8 @@ func (rf *Raft) Heartbeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	rf.logger.recvHBET(args)
+
 	reply.From = rf.me
 	reply.To = args.From
 	reply.Term = rf.currentTerm
@@ -57,7 +62,7 @@ func (rf *Raft) Heartbeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 		return
 	}
 
-	rf.becomeFollower(args.Term)
+	rf.becomeFollower(args.Term, false)
 
 	lastNewEntryIndex := uint64(0)
 	// 发的commit比我的新,更新log
