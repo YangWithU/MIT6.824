@@ -38,11 +38,21 @@ type AppendEntriesArgs struct {
 	Entries        []LogEntry
 }
 
+type Err int
+
+const (
+	Matched = iota
+	IndexNotMatched
+	TermNotMatched
+)
+
 type AppendEntriesReply struct {
 	From               int
 	To                 int
+	Err                Err
 	Term               uint64
 	ConflictTerm       uint64
+	LastLogIndex       uint64
 	FirstConflictIndex uint64
 	LogLength          uint64
 }

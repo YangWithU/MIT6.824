@@ -220,13 +220,22 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	isLeader := rf.state == Leader && !rf.killed()
+	if !isLeader {
+		return 0, 0, false
+	}
 
 	// Your code here (2B).
 
-	return index, term, isLeader
+	index := rf.log.lastIndex() + 1
+	term := rf.currentTerm
+	entry := LogEntry{Index: index, Term: term, Data: command}
+	rf.log.entries = append(rf.log.entries, entry)
+
+	return int(index), int(term), isLeader
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -288,6 +297,8 @@ func (rf *Raft) ticker() {
 				rf.broadcastHeartbeat()
 				rf.resetHeartbeatTimer()
 			}
+
+			rf.broadcastAppendEntries()
 		}
 
 		rf.mu.Unlock()

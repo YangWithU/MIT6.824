@@ -21,8 +21,11 @@ type Log struct {
 	// persisted log entries.
 	entries []LogEntry
 
-	applied   uint64 // the highest log index of the log entry raft knows that the application has applied.
-	committed uint64 // the highest log index of the log entry raft knows that the raft cluster has committed.
+	// apply 后log entry当前最大的log index
+	applied uint64
+
+	// commit 后log entry当前最大的log index
+	committed uint64
 }
 
 func makeLog() Log {
@@ -87,4 +90,25 @@ func (log *Log) committedTo(index uint64) {
 
 func (log *Log) appliedTo(index uint64) {
 	log.applied = index
+}
+
+func (log *Log) mayCommittedTo(leaderCommittedIndex uint64) {
+	if leaderCommittedIndex > log.committed {
+		index := min(leaderCommittedIndex, log.lastIndex())
+		log.committedTo(index)
+	}
+}
+
+// index后面的我不要
+func (log *Log) truncateSuffix(index uint64) {
+	if index <= log.firstIndex() || index > log.lastIndex() {
+		return
+	}
+
+	index = log.toArrayIndex(index)
+	log.entries = log.entries[:index]
+}
+
+func (log *Log) append(entry []LogEntry) {
+	log.entries = append(log.entries, entry...)
 }

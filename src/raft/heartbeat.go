@@ -63,13 +63,8 @@ func (rf *Raft) Heartbeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 	}
 
 	rf.becomeFollower(args.Term, false)
-
-	lastNewEntryIndex := uint64(0)
-	// 发的commit比我的新,更新log
-	if args.CommittedIndex > rf.log.committed {
-		index := min(args.CommittedIndex, lastNewEntryIndex)
-		rf.log.committedTo(index)
-	}
-
 	reply.Term = rf.currentTerm
+
+	// 发的commit比我的log成员的新,更新log
+	rf.log.mayCommittedTo(args.CommittedIndex)
 }
