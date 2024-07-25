@@ -32,8 +32,8 @@ type AppendEntriesArgs struct {
 	From           int
 	To             int
 	Term           uint64
-	CommittedIndex uint64
-	PrevLogIndex   uint64
+	CommittedIndex uint64 // CommittedIndex: 发送方最新commit index
+	PrevLogIndex   uint64 //
 	PrevLogTerm    uint64
 	Entries        []LogEntry
 }

@@ -26,27 +26,6 @@ import (
 	"6.5840/labrpc"
 )
 
-// as each Raft peer becomes aware that successive log entries are
-// committed, the peer should send an ApplyMsg to the service (or
-// tester) on the same server, via the applyCh passed to Make(). set
-// CommandValid to true to indicate that the ApplyMsg contains a newly
-// committed log entry.
-//
-// in part 2D you'll want to send other kinds of messages (e.g.,
-// snapshots) on the applyCh, but set CommandValid to false for these
-// other uses.
-type ApplyMsg struct {
-	CommandValid bool
-	Command      interface{}
-	CommandIndex int
-
-	// For 2D:
-	SnapshotValid bool
-	Snapshot      []byte
-	SnapshotTerm  int
-	SnapshotIndex int
-}
-
 type PeerState int
 
 const (
@@ -233,7 +212,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := rf.log.lastIndex() + 1
 	term := rf.currentTerm
 	entry := LogEntry{Index: index, Term: term, Data: command}
-	rf.log.entries = append(rf.log.entries, entry)
+	rf.log.append([]LogEntry{entry})
 
 	return int(index), int(term), isLeader
 }
@@ -323,34 +302,37 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
-
-	rf.logger = makeLogger(true, "new_log.txt")
-	rf.logger.r = rf
-
 	rf.mu = sync.Mutex{}
 
 	rf.applyCh = applyCh
 	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
 
+	rf.logger = makeLogger(true, "new_log.txt")
+	rf.logger.r = rf
+
 	rf.log = makeLog()
+	rf.log.logger = rf.logger
+
 	rf.peerTrackers = make([]PeerTracker, len(peers))
 	rf.resetTrackedIndexes()
 
 	// vote
-	rf.state = Follower // start as follower
-	rf.currentTerm = 0
-	rf.resetVote()
+	// start as follower
+	rf.becomeFollower(0, true)
 
 	// time
 	rf.heartbeatTimeout = HeartbeatTimeout
 	rf.resetHeartbeatTimer()
 
-	rf.becomeFollower(0, true)
 	// initialize from state persisted before a crash
 	// rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
+
+	// start commiter goroutine to observe new committed entries
+	// and send new entries to rf.applyCh
+	go rf.committer()
 
 	return rf
 }

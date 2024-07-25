@@ -66,5 +66,5 @@ func (rf *Raft) Heartbeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 	reply.Term = rf.currentTerm
 
 	// 发的commit比我的log成员的新,更新log
-	rf.log.mayCommittedTo(args.CommittedIndex)
+	rf.mayCommittedTo(args.CommittedIndex)
 }

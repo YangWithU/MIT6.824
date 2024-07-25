@@ -26,6 +26,8 @@ type Log struct {
 
 	// commit 后log entry当前最大的log index
 	committed uint64
+
+	logger *Logger
 }
 
 func makeLog() Log {
@@ -69,7 +71,7 @@ func (log *Log) slice(start, end uint64) ([]LogEntry, error) {
 		return nil, ErrOutOfBound
 	}
 
-	end = min(end, log.lastIndex())
+	end = min(end, log.lastIndex()+1)
 
 	if start == end {
 		return make([]LogEntry, 0), nil
@@ -85,11 +87,20 @@ func (log *Log) slice(start, end uint64) ([]LogEntry, error) {
 }
 
 func (log *Log) committedTo(index uint64) {
+	oriCommitted := log.committed
 	log.committed = index
+	log.logger.updateCommitted(oriCommitted)
 }
 
 func (log *Log) appliedTo(index uint64) {
+	oriApplied := log.applied
 	log.applied = index
+	log.logger.updateApplied(oriApplied)
+}
+
+func (log *Log) compactedTo(index uint64, term uint64) {
+	log.snapshotIndex = index
+	log.snapshotTerm = term
 }
 
 func (log *Log) mayCommittedTo(leaderCommittedIndex uint64) {
@@ -106,9 +117,29 @@ func (log *Log) truncateSuffix(index uint64) {
 	}
 
 	index = log.toArrayIndex(index)
+
+	log.logger.discardEnts(log.entries[index:])
+
 	log.entries = log.entries[:index]
 }
 
 func (log *Log) append(entry []LogEntry) {
+	log.logger.appendEnts(entry)
 	log.entries = append(log.entries, entry...)
+}
+
+func (log *Log) clone(entries []LogEntry) []LogEntry {
+	res := make([]LogEntry, len(entries))
+	copy(res, entries)
+	return res
+}
+
+// 返回log.entries[log.applied:log.committed]拷贝
+func (log *Log) newCommittedEntries() []LogEntry {
+	start := log.toArrayIndex(log.applied + 1)
+	end := log.toArrayIndex(log.committed + 1)
+	if start > end {
+		return make([]LogEntry, 0)
+	}
+	return log.clone(log.entries[start:end])
 }
