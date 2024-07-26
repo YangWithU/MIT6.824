@@ -270,14 +270,15 @@ func (rf *Raft) ticker() {
 				break
 			}
 
+			forced := false
 			if rf.isLastHeartbeatTimeout() {
 				//Debug(dTimer, "isLastHeartbeatTimeout(): rf peer %v now as Leader sending heartbeat", rf.me)
 				rf.logger.beatTimeout()
-				rf.broadcastHeartbeat()
+				forced = true
 				rf.resetHeartbeatTimer()
 			}
-
-			rf.broadcastAppendEntries()
+			// 每个heartbeat,再发送一遍appendEntry
+			rf.broadcastAppendEntries(forced)
 		}
 
 		rf.mu.Unlock()

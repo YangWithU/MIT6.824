@@ -115,11 +115,11 @@ func (rf *Raft) sendAppendEntriesAndHandle(args *AppendEntriesArgs) {
 	}
 }
 
-func (rf *Raft) broadcastAppendEntries() {
+func (rf *Raft) broadcastAppendEntries(isForced bool) {
 	rf.logger.bcastAENT()
 	for idx := range rf.peers {
 		// 查看leader是否有新的entry
-		if idx != rf.me && rf.hasNewEntries(idx) {
+		if idx != rf.me && (isForced || rf.hasNewEntries(idx)) {
 			args := rf.makeAppendEntriesArgs(idx)
 			rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, uint64(idx))
 			go rf.sendAppendEntriesAndHandle(args)
@@ -135,7 +135,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.logger.recvAENT(args)
+	if len(args.Entries) > 0 {
+		rf.logger.recvAENT(args)
+	} else {
+		rf.logger.recvHBET(args)
+	}
 
 	reply.Term = rf.currentTerm
 	reply.From = rf.me

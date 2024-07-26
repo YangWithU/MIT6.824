@@ -347,7 +347,7 @@ func (l *Logger) bcastHBET() {
 	l.printf(BEAT, "N%v @ HBET", r.me)
 }
 
-func (l *Logger) recvHBET(m *HeartBeatArgs) {
+func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 	r := l.r
 	l.printf(BEAT, "N%v <- N%v HBET (T:%v CI:%v)", r.me, m.From, m.Term, m.CommittedIndex)
 }

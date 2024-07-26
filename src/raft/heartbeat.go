@@ -51,7 +51,7 @@ func (rf *Raft) Heartbeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.logger.recvHBET(args)
+	//rf.logger.recvHBET(args)
 
 	reply.From = rf.me
 	reply.To = args.From
