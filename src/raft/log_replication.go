@@ -66,8 +66,7 @@ func (rf *Raft) mayCommittedMatched(index uint64) {
 }
 
 func (rf *Raft) mayCommittedTo(index uint64) {
-	if index > rf.log.committed {
-		res := min(index, rf.log.lastIndex())
+	if res := min(index, rf.log.lastIndex()); res > rf.log.committed {
 		rf.log.committedTo(res)
 		rf.hasNewCommittedEntries.Signal()
 	}

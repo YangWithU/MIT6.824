@@ -83,7 +83,7 @@ func (log *Log) slice(start, end uint64) ([]LogEntry, error) {
 	start = log.toArrayIndex(start)
 	end = log.toArrayIndex(end)
 
-	return log.entries[start:end], nil
+	return log.clone(log.entries[start:end]), nil
 }
 
 func (log *Log) committedTo(index uint64) {

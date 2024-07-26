@@ -142,6 +142,13 @@ func (rf *Raft) checkCandidateLogNewer(candLastLogIndex, candLastLogTerm uint64)
 		(candLastLogTerm == lastLogTerm && candLastLogIndex >= lastLogIndex)
 }
 
+func (rf *Raft) otherMoreUpToDate(candLastLogIndex, candLastLogTerm uint64) bool {
+	lastLogIndex := rf.log.lastIndex()
+	lastLogTerm, _ := rf.log.term(lastLogIndex)
+	return candLastLogTerm > candLastLogTerm ||
+		(candLastLogTerm == lastLogTerm && candLastLogIndex > lastLogIndex)
+}
+
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -164,10 +171,18 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.becomeFollower(args.Term, false)
 	}
 
+	// 我也candidate,但request我的candidate的LastLogIndex比我的大
+	if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
+		// 我选择退出
+		rf.becomeFollower(args.Term, true)
+	}
+
 	// 判断能否成为 Leader
 	if (rf.votedTo == NoneVotedTo || rf.votedTo == args.From) &&
 		rf.checkCandidateLogNewer(args.LastLogIndex, args.LastLogTerm) {
-		//Debug(dInfo, "RequestVote(): %v now voted to %v", rf.me, args.From)
+
+		// 接收到candidate发来的voteArg就重置自己的electionTimer保证不重复竞争
+		rf.resetElectionTimer()
 		rf.votedTo = args.From
 		reply.VotedTo = args.From
 		rf.logger.voteTo(args.From)
