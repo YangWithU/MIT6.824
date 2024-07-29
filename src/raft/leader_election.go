@@ -18,6 +18,20 @@ func (rf *Raft) isLastElectionTimeout() bool {
 	return time.Since(rf.lastElection) > rf.electionTimeout
 }
 
+func (rf *Raft) updateTerm(term uint64) {
+	if rf.currentTerm != term {
+		rf.currentTerm = term
+		rf.persist()
+	}
+}
+
+func (rf *Raft) updateVoteTo(voteTo int) {
+	if rf.votedTo != voteTo {
+		rf.votedTo = voteTo
+		rf.persist()
+	}
+}
+
 // 初始化votedMe和votedTo状态
 func (rf *Raft) resetVote() {
 	rf.votedMe = make([]bool, len(rf.peers))
@@ -53,7 +67,7 @@ func (rf *Raft) becomeCandidate() {
 
 // 回退follower, 更新自己term到最新, 设置voteTo=None
 func (rf *Raft) becomeFollower(term uint64, isForced bool) {
-	if isForced || rf.currentTerm < term || rf.state == Candidate {
+	if isForced || rf.currentTerm < term {
 		oldTerm := rf.currentTerm
 		rf.state = Follower
 		rf.currentTerm = term
@@ -107,7 +121,10 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 	}
 
 	// 判断能不能选我
-	if args.Term == reply.Term && rf.state == Candidate && reply.VotedTo == rf.me {
+	if args.Term != reply.Term || rf.state != Candidate {
+		return
+	}
+	if reply.VotedTo == rf.me {
 		rf.votedMe[reply.From] = true
 		if rf.isReceivedMajority() {
 			//Debug(dVote, "handleRequestVoteReply() %v become leader", rf.me)
@@ -153,7 +170,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	//Debug(dInfo, "RequestVote(): %v now handle RequestVoteArgs from %v", rf.me, args.From)
 	rf.logger.recvRVOT(args)
 
 	// default values
@@ -167,7 +183,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term > rf.currentTerm {
-		//Debug(dInfo, "RequestVote(): %v now become follower of %v", rf.me, args.From)
+		// 此时修改peer的votedTo = None
 		rf.becomeFollower(args.Term, false)
 	}
 

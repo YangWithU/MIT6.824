@@ -270,7 +270,7 @@ func (l *Logger) bcastAENT() {
 func (l *Logger) sendEnts(prevLogIndex, prevLogTerm uint64, ents []LogEntry, to uint64) {
 	r := l.r
 	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.currentTerm, r.log.committed, prevLogIndex, prevLogTerm, len(ents))
-	// l.printEnts(LRPE, r.me, ents)
+	l.printEnts(LRPE, uint64(r.me), ents)
 }
 
 func (l *Logger) recvAENT(m *AppendEntriesArgs) {
@@ -337,6 +337,11 @@ func (l *Logger) printEnts(topic logTopic, me uint64, ents []LogEntry) {
 // heartbeat events.
 //
 
+func (l *Logger) sendBeat(prevLogIndex, prevLogTerm uint64, ents []LogEntry, to uint64) {
+	r := l.r
+	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.currentTerm, r.log.committed, prevLogIndex, prevLogTerm, len(ents))
+}
+
 func (l *Logger) beatTimeout() {
 	r := l.r
 	l.printf(BEAT, "N%v BTO (S:%v T:%v)", r.me, r.state, r.currentTerm)
@@ -352,21 +357,33 @@ func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 	l.printf(BEAT, "N%v <- N%v HBET (T:%v CI:%v)", r.me, m.From, m.Term, m.CommittedIndex)
 }
 
-// //
-// // persistence events.
-// //
+//
+// persistence events.
+//
 
-// func (l *Logger) restoreEnts(ents []Entry) {
-// 	r := l.r
-// 	l.printf(PERS, "N%v re (LN:%v)", r.me, len(ents))
-// 	// l.printEnts(PERS, r.me, ents)
-// }
+func (l *Logger) restore() {
+	r := l.r
+	l.printf(PEER, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
+		r.log.lastIndex(), r.log.committed, r.log.applied)
+}
 
-// func (l *Logger) PersistEnts(oldlastStabledIndex, lastStabledIndex uint64) {
-// 	r := l.r
-// 	// be: backup entries.
-// 	l.printf(PERS, "N%v be (SI:%v) -> (SI:%v)", r.me, oldlastStabledIndex, lastStabledIndex)
-// }
+func (l *Logger) persist() {
+	r := l.r
+	l.printf(PEER, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
+		r.log.lastIndex(), r.log.committed, r.log.applied)
+}
+
+func (l *Logger) restoreEnts(ents []LogEntry) {
+	r := l.r
+	l.printf(PERS, "N%v re (LN:%v)", r.me, len(ents))
+	l.printEnts(PERS, uint64(r.me), ents)
+}
+
+func (l *Logger) PersistEnts(oldlastStabledIndex, lastStabledIndex uint64) {
+	r := l.r
+	// be: backup entries.
+	l.printf(PERS, "N%v be (SI:%v) -> (SI:%v)", r.me, oldlastStabledIndex, lastStabledIndex)
+}
 
 // //
 // // peer interaction events.

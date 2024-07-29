@@ -85,10 +85,16 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		return
 	}
 
+	if rf.currentTerm != args.Term || rf.state != Leader {
+		return
+	}
+
 	oriNext := rf.peerTrackers[reply.From].nextIndex
 	oriMatch := rf.peerTrackers[reply.From].matchIndex
 
 	switch reply.Err {
+	case Rejected:
+		// do nothing, waits
 	case Matched:
 		// rf:leader; 更新rf的peerTrackers记录
 		// nextIndex
@@ -99,12 +105,17 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 
 		// follower更新成功,将log持久化到leader,修改leader的committed
 		rf.mayCommittedMatched(rf.peerTrackers[reply.From].matchIndex)
-	default:
+	case IndexNotMatched:
+		fallthrough
+	case TermNotMatched:
 		rf.peerTrackers[reply.From].nextIndex -= 1
+
+		resNext := rf.peerTrackers[reply.From].nextIndex
+		resMatch := rf.peerTrackers[reply.From].matchIndex
+		rf.logger.updateProgOf(uint64(args.From), oriNext, oriMatch, resNext, resMatch)
+	default:
+		panic("Err type invalid")
 	}
-	resNext := rf.peerTrackers[reply.From].nextIndex
-	resMatch := rf.peerTrackers[reply.From].matchIndex
-	rf.logger.updateProgOf(uint64(args.From), oriNext, oriMatch, resNext, resMatch)
 }
 
 func (rf *Raft) sendAppendEntriesAndHandle(args *AppendEntriesArgs) {
@@ -120,7 +131,11 @@ func (rf *Raft) broadcastAppendEntries(isForced bool) {
 		// 查看leader是否有新的entry
 		if idx != rf.me && (isForced || rf.hasNewEntries(idx)) {
 			args := rf.makeAppendEntriesArgs(idx)
-			rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, uint64(idx))
+			if len(args.Entries) > 0 {
+				rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, uint64(idx))
+			} else {
+				rf.logger.sendBeat(args.PrevLogIndex, args.PrevLogTerm, args.Entries, uint64(idx))
+			}
 			go rf.sendAppendEntriesAndHandle(args)
 		}
 	}
@@ -143,12 +158,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Term = rf.currentTerm
 	reply.From = rf.me
 	reply.To = args.From
+	reply.Err = Rejected // rejected when sender args < rf.me.term
 
 	if args.Term < rf.currentTerm {
 		return
 	}
 
-	rf.becomeFollower(args.Term, false)
+	rf.becomeFollower(args.Term, true)
 	reply.Term = rf.currentTerm
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)

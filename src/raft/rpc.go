@@ -41,7 +41,8 @@ type AppendEntriesArgs struct {
 type Err int
 
 const (
-	Matched = iota
+	Rejected = iota
+	Matched
 	IndexNotMatched
 	TermNotMatched
 )
