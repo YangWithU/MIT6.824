@@ -36,7 +36,7 @@ func (rf *Raft) updateVoteTo(voteTo int) {
 func (rf *Raft) resetVote() {
 	rf.votedMe = make([]bool, len(rf.peers))
 	rf.votedMe[rf.me] = true
-	rf.votedTo = NoneVotedTo
+	rf.updateVoteTo(NoneVotedTo)
 }
 
 func (rf *Raft) makeRequestVoteArgs(to int) *RequestVoteArgs {
@@ -57,21 +57,23 @@ func (rf *Raft) makeRequestVoteArgs(to int) *RequestVoteArgs {
 func (rf *Raft) becomeCandidate() {
 	//Debug(dVote, "becomeCandidate(): now %v becomeCandidate, and vote to itself", rf.me)
 
-	rf.currentTerm++
+	rf.updateTerm(rf.currentTerm + 1)
 	rf.logger.stateToCandidate()
 
 	rf.state = Candidate
 	rf.resetVote()
-	rf.votedTo = rf.me
+	rf.updateVoteTo(rf.me)
 }
 
 // 回退follower, 更新自己term到最新, 设置voteTo=None
 func (rf *Raft) becomeFollower(term uint64, isForced bool) {
 	if isForced || rf.currentTerm < term {
 		oldTerm := rf.currentTerm
-		rf.state = Follower
-		rf.currentTerm = term
-		rf.logger.stateToFollower(oldTerm) // should place back of rf.state & rf.currentTerm
+		rf.updateTerm(term)
+		if rf.state != Follower {
+			rf.state = Follower
+			rf.logger.stateToFollower(oldTerm) // should place back of rf.state & rf.currentTerm
+		}
 		rf.resetVote()
 	}
 
@@ -199,7 +201,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 		// 接收到candidate发来的voteArg就重置自己的electionTimer保证不重复竞争
 		rf.resetElectionTimer()
-		rf.votedTo = args.From
+		rf.updateVoteTo(args.From)
 		reply.VotedTo = args.From
 		rf.logger.voteTo(args.From)
 	} else {

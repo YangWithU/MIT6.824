@@ -26,7 +26,7 @@ func (rf *Raft) persist() {
 	raftState := w.Bytes()
 	rf.persister.Save(raftState, nil)
 
-	rf.logger.persist() // debug log
+	rf.logger.persistLog() // debug log
 }
 
 // restore previously persisted state.
@@ -45,5 +45,5 @@ func (rf *Raft) readPersist(data []byte) {
 		}
 	}
 
-	rf.logger.restore() // debug log
+	rf.logger.restoreLog() // debug log
 }

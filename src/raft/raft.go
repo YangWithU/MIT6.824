@@ -178,7 +178,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := rf.log.lastIndex() + 1
 	term := rf.currentTerm
 	entry := LogEntry{Index: index, Term: term, Data: command}
-	rf.log.append([]LogEntry{entry})
+	rf.logAppend([]LogEntry{entry})
 
 	return int(index), int(term), isLeader
 }
@@ -278,6 +278,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.log = makeLog()
 	rf.log.logger = rf.logger
+
+	// 启动时读取之前存储的状态：term, votedTo, entries, committed, applied
+	rf.readPersist(rf.persister.ReadRaftState())
+	rf.logger.restoreLog()
 
 	rf.peerTrackers = make([]PeerTracker, len(peers))
 	rf.resetTrackedIndexes()

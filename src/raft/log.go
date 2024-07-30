@@ -111,16 +111,18 @@ func (log *Log) mayCommittedTo(leaderCommittedIndex uint64) {
 }
 
 // index后面的我不要
-func (log *Log) truncateSuffix(index uint64) {
+func (log *Log) truncateSuffix(index uint64) bool {
 	if index <= log.firstIndex() || index > log.lastIndex() {
-		return
+		return false
 	}
 
 	index = log.toArrayIndex(index)
-
-	log.logger.discardEnts(log.entries[index:])
-
-	log.entries = log.entries[:index]
+	if len(log.entries[index:]) > 0 {
+		log.entries = log.entries[:index]
+		log.logger.discardEnts(log.entries[index:])
+		return true
+	}
+	return false
 }
 
 func (log *Log) append(entry []LogEntry) {

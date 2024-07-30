@@ -141,6 +141,17 @@ func (rf *Raft) broadcastAppendEntries(isForced bool) {
 	}
 }
 
+func (rf *Raft) truncateLogSuffix(index uint64) {
+	if rf.log.truncateSuffix(index) {
+		rf.persist()
+	}
+}
+
+func (rf *Raft) logAppend(entries []LogEntry) {
+	rf.log.append(entries)
+	rf.persist()
+}
+
 // 在follower被调用
 // 检查follower log中是否包含PrevLogIndex这条log
 // 存在则将args.entries从args第一个覆盖插入到follower的log中
@@ -179,8 +190,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// 那么锯掉peer本地突出来的entry,加上arg的entry,结束
 	for idx, entry := range args.Entries {
 		if term, err := rf.log.term(entry.Index); err != nil || term != entry.Term {
-			rf.log.truncateSuffix(entry.Index)
-			rf.log.append(args.Entries[idx:])
+			rf.truncateLogSuffix(entry.Index)
+			rf.logAppend(args.Entries[idx:])
 			break
 		}
 	}

@@ -361,13 +361,13 @@ func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 // persistence events.
 //
 
-func (l *Logger) restore() {
+func (l *Logger) restoreLog() {
 	r := l.r
 	l.printf(PEER, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
 		r.log.lastIndex(), r.log.committed, r.log.applied)
 }
 
-func (l *Logger) persist() {
+func (l *Logger) persistLog() {
 	r := l.r
 	l.printf(PEER, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
 		r.log.lastIndex(), r.log.committed, r.log.applied)
