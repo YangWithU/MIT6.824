@@ -55,30 +55,35 @@ func (rf *Raft) makeRequestVoteArgs(to int) *RequestVoteArgs {
 // 如果一个 peer 收到更高的Term，会更新自己的 Term 并转换成 Follower
 // 一个节点被选成 Leader，它的 currentTerm 不变，向 Follower 发 heartbeat
 func (rf *Raft) becomeCandidate() {
-	//Debug(dVote, "becomeCandidate(): now %v becomeCandidate, and vote to itself", rf.me)
+	defer rf.persist()
 
-	rf.updateTerm(rf.currentTerm + 1)
+	rf.currentTerm++
+	rf.votedMe = make([]bool, len(rf.peers))
+	rf.votedTo = rf.me
 	rf.logger.stateToCandidate()
 
 	rf.state = Candidate
-	rf.resetVote()
-	rf.updateVoteTo(rf.me)
 }
 
 // 回退follower, 更新自己term到最新, 设置voteTo=None
-func (rf *Raft) becomeFollower(term uint64, isForced bool) {
-	if isForced || rf.currentTerm < term {
-		oldTerm := rf.currentTerm
-		rf.updateTerm(term)
-		if rf.state != Follower {
-			rf.state = Follower
-			rf.logger.stateToFollower(oldTerm) // should place back of rf.state & rf.currentTerm
-		}
-		rf.resetVote()
+func (rf *Raft) becomeFollower(term uint64) bool {
+	termChanged := false
+	oldTerm := rf.currentTerm
+	if term > rf.currentTerm {
+		rf.currentTerm = term
+		rf.votedTo = NoneVotedTo
+		termChanged = true
+	}
+
+	if rf.state != Follower {
+		rf.state = Follower
+		rf.logger.stateToFollower(oldTerm) // should place back of rf.state & rf.currentTerm
 	}
 
 	// 刷新自己的时间记录
 	rf.resetElectionTimer()
+
+	return termChanged
 }
 
 func (rf *Raft) becomeLeader() {
@@ -88,9 +93,9 @@ func (rf *Raft) becomeLeader() {
 }
 
 func (rf *Raft) isReceivedMajority() bool {
-	count := 0
-	for _, v := range rf.votedMe {
-		if v {
+	count := 1
+	for idx, v := range rf.votedMe {
+		if v && idx != rf.me {
 			count++
 		}
 	}
@@ -98,11 +103,6 @@ func (rf *Raft) isReceivedMajority() bool {
 	if res {
 		rf.logger.recvVoteQuorum(uint64(count))
 	}
-	//if res {
-	//	Debug(dVote, "isReceivedMajority(): %v has majority vote", rf.me)
-	//} else {
-	//	Debug(dVote, "isReceivedMajority(): %v no majority vote, fallback to candidate", rf.me)
-	//}
 
 	return res
 }
@@ -111,14 +111,14 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	//Debug(dVote, "handleRequestVoteReply(): args: %v, reply %v", args, reply)
 	rf.logger.recvRVOTRes(reply)
 
+	// 更新判断peer是否活跃时间戳
 	rf.peerTrackers[reply.From].lastAck = time.Now()
 
 	if reply.Term > rf.currentTerm {
-		//Debug(dVote, "handleRequestVoteReply() %v election failed, become follower", rf.me)
-		rf.becomeFollower(reply.Term, false)
+		rf.becomeFollower(reply.Term)
+		rf.persist()
 		return
 	}
 
@@ -129,7 +129,6 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 	if reply.VotedTo == rf.me {
 		rf.votedMe[reply.From] = true
 		if rf.isReceivedMajority() {
-			//Debug(dVote, "handleRequestVoteReply() %v become leader", rf.me)
 			rf.becomeLeader()
 		}
 	}
@@ -185,30 +184,30 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term > rf.currentTerm {
-		// 此时修改peer的votedTo = None
-		rf.becomeFollower(args.Term, false)
+		// 此时修改peer的votedTo = None,term = cur, electionTimer
+		rf.becomeFollower(args.Term)
+		defer rf.persist()
 	}
+	reply.Term = rf.currentTerm
 
-	// 我也candidate,但request我的candidate的LastLogIndex比我的大
-	if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
-		// 我选择退出
-		rf.becomeFollower(args.Term, true)
-	}
+	//// 我也candidate,但request我的candidate的LastLogIndex比我的大
+	//if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
+	//	// 我选择退出
+	//	rf.becomeFollower(args.Term)
+	//}
 
 	// 判断能否成为 Leader
 	if (rf.votedTo == NoneVotedTo || rf.votedTo == args.From) &&
 		rf.checkCandidateLogNewer(args.LastLogIndex, args.LastLogTerm) {
+		rf.votedTo = args.From
+		reply.VotedTo = args.From
+		rf.logger.voteTo(args.From)
 
 		// 接收到candidate发来的voteArg就重置自己的electionTimer保证不重复竞争
 		rf.resetElectionTimer()
-		rf.updateVoteTo(args.From)
-		reply.VotedTo = args.From
-		rf.logger.voteTo(args.From)
 	} else {
 		lastLogIndex := rf.log.lastIndex()
 		lastLogTerm, _ := rf.log.term(lastLogIndex)
 		rf.logger.rejectVoteTo(args.From, args.LastLogIndex, args.LastLogTerm, lastLogIndex, lastLogTerm)
 	}
-
-	reply.Term = rf.currentTerm
 }

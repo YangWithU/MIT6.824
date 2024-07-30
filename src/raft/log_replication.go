@@ -81,11 +81,16 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 	rf.peerTrackers[reply.From].lastAck = time.Now()
 
 	if reply.Term > rf.currentTerm {
-		rf.becomeFollower(reply.Term, false)
+		rf.becomeFollower(reply.Term)
+		rf.persist()
 		return
 	}
 
 	if rf.currentTerm != args.Term || rf.state != Leader {
+		return
+	}
+	// 我们如果想要添加新的entry,就要保证follower的Index处于相同状态
+	if rf.peerTrackers[reply.From].nextIndex-1 != args.PrevLogIndex {
 		return
 	}
 
@@ -97,11 +102,9 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		// do nothing, waits
 	case Matched:
 		// rf:leader; 更新rf的peerTrackers记录
-		// nextIndex
-		rf.peerTrackers[reply.From].nextIndex = max(rf.peerTrackers[reply.From].nextIndex,
-			args.PrevLogIndex+uint64(len(args.Entries))+1)
-		rf.peerTrackers[reply.From].matchIndex = max(rf.peerTrackers[reply.From].matchIndex,
-			rf.peerTrackers[reply.From].nextIndex-1)
+		rf.peerTrackers[reply.From].matchIndex = args.PrevLogIndex + uint64(len(args.Entries))
+
+		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
 
 		// follower更新成功,将log持久化到leader,修改leader的committed
 		rf.mayCommittedMatched(rf.peerTrackers[reply.From].matchIndex)
@@ -141,17 +144,6 @@ func (rf *Raft) broadcastAppendEntries(isForced bool) {
 	}
 }
 
-func (rf *Raft) truncateLogSuffix(index uint64) {
-	if rf.log.truncateSuffix(index) {
-		rf.persist()
-	}
-}
-
-func (rf *Raft) logAppend(entries []LogEntry) {
-	rf.log.append(entries)
-	rf.persist()
-}
-
 // 在follower被调用
 // 检查follower log中是否包含PrevLogIndex这条log
 // 存在则将args.entries从args第一个覆盖插入到follower的log中
@@ -175,8 +167,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	rf.becomeFollower(args.Term, true)
-	reply.Term = rf.currentTerm
+	termChanged := rf.becomeFollower(args.Term)
+	if termChanged {
+		reply.Term = rf.currentTerm
+		defer rf.persist()
+	}
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {
@@ -190,10 +185,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// 那么锯掉peer本地突出来的entry,加上arg的entry,结束
 	for idx, entry := range args.Entries {
 		if term, err := rf.log.term(entry.Index); err != nil || term != entry.Term {
-			rf.truncateLogSuffix(entry.Index)
-			rf.logAppend(args.Entries[idx:])
+			rf.log.truncateSuffix(entry.Index)
+			rf.log.append(args.Entries[idx:])
+			if !termChanged {
+				rf.persist() // term没变,立即persist
+			}
 			break
 		}
 	}
-	rf.mayCommittedTo(args.CommittedIndex)
+	curLastLogIndex := min(args.CommittedIndex, args.PrevLogIndex+uint64(len(args.Entries)))
+	rf.mayCommittedTo(curLastLogIndex)
 }

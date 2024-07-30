@@ -178,7 +178,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := rf.log.lastIndex() + 1
 	term := rf.currentTerm
 	entry := LogEntry{Index: index, Term: term, Data: command}
-	rf.logAppend([]LogEntry{entry})
+	rf.log.append([]LogEntry{entry})
+	rf.persist()
 
 	return int(index), int(term), isLeader
 }
@@ -232,7 +233,7 @@ func (rf *Raft) ticker() {
 		case Leader:
 			if !rf.isQuorumPeerActive() {
 				rf.logger.stepDown()
-				rf.becomeFollower(rf.currentTerm, true)
+				rf.becomeFollower(rf.currentTerm)
 				break
 			}
 
@@ -273,22 +274,24 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyCh = applyCh
 	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
 
-	rf.logger = makeLogger(true, "new_log.txt")
+	rf.logger = makeLogger(false, "new_log.txt")
 	rf.logger.r = rf
 
 	rf.log = makeLog()
 	rf.log.logger = rf.logger
 
 	// 启动时读取之前存储的状态：term, votedTo, entries, committed, applied
-	rf.readPersist(rf.persister.ReadRaftState())
-	rf.logger.restoreLog()
+	if rfState := rf.persister.ReadRaftState(); len(rfState) > 0 {
+		rf.readPersist(rfState)
+		rf.logger.restoreLog()
+	} else {
+		rf.currentTerm = 0
+		rf.votedTo = NoneVotedTo
+	}
+	rf.logger.stateToFollower(rf.currentTerm)
 
 	rf.peerTrackers = make([]PeerTracker, len(peers))
 	rf.resetTrackedIndexes()
-
-	// vote
-	// start as follower
-	rf.becomeFollower(0, true)
 
 	// time
 	rf.heartbeatTimeout = HeartbeatTimeout

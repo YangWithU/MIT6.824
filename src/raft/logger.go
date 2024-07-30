@@ -11,6 +11,7 @@ import (
 // true to turn on debugging/logging.
 const debug = true
 const LOGTOFILE = true
+const logPrintEnts = true
 
 // what topic the log message is related to.
 // logs are organized by topics which further consists of events.
@@ -101,7 +102,7 @@ type Logger struct {
 
 func makeLogger(logToFile bool, logFileName string) *Logger {
 	logger := &Logger{}
-	logger.init(LOGTOFILE, logFileName)
+	logger.init(logToFile, logFileName)
 	return logger
 }
 
@@ -328,8 +329,10 @@ func (l *Logger) updateApplied(oldApplied uint64) {
 
 func (l *Logger) printEnts(topic logTopic, me uint64, ents []LogEntry) {
 	for _, ent := range ents {
-		// l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.currentTerm, string(ent.Data))
-		l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
+		if ent.Index != 0 {
+			l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.Term, ent.Data.(int))
+			//l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
+		}
 	}
 }
 
@@ -363,14 +366,20 @@ func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 
 func (l *Logger) restoreLog() {
 	r := l.r
-	l.printf(PEER, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
+	l.printf(PERS, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
 		r.log.lastIndex(), r.log.committed, r.log.applied)
+	if logPrintEnts {
+		l.printEnts(PERS, uint64(r.me), r.log.entries)
+	}
 }
 
 func (l *Logger) persistLog() {
 	r := l.r
-	l.printf(PEER, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
+	l.printf(PERS, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
 		r.log.lastIndex(), r.log.committed, r.log.applied)
+	if logPrintEnts {
+		l.printEnts(PERS, uint64(r.me), r.log.entries)
+	}
 }
 
 func (l *Logger) restoreEnts(ents []LogEntry) {

@@ -26,7 +26,7 @@ func (rf *Raft) handleHeartbeatReply(reply *HeartBeatReply) {
 	rf.peerTrackers[reply.From].lastAck = time.Now()
 
 	if reply.Term > rf.currentTerm {
-		rf.becomeFollower(reply.Term, false)
+		rf.becomeFollower(reply.Term)
 	}
 }
 
@@ -62,7 +62,7 @@ func (rf *Raft) Heartbeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 		return
 	}
 
-	rf.becomeFollower(args.Term, false)
+	rf.becomeFollower(args.Term)
 	reply.Term = rf.currentTerm
 
 	// 发的commit比我的log成员的新,更新log
