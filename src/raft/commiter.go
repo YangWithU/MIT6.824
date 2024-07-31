@@ -21,6 +21,7 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+// 向client发送command执行结果,并将新log标记applied
 func (rf *Raft) committer() {
 	rf.mu.Lock()
 	for !rf.killed() {

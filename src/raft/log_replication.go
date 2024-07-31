@@ -29,6 +29,9 @@ func (rf *Raft) makeAppendEntriesArgs(to int) *AppendEntriesArgs {
 	}
 }
 
+// 一致性检查:
+// 领导人会把新的日志条目前紧挨着的条目的索引位置和任期号包含在日志内
+// 如果跟随者在它的日志中找不到包含相同索引位置和任期号的条目，那么他就会拒绝接收新的日志条目.
 // 检查leader发送自己peerTrackers记录nextIndex-1是否在peer中存在对应log
 func (rf *Raft) checkLogPrefixMatched(prevLeaderLogIndex, prevLeaderLogTerm uint64) Err {
 	localPrevLogTerm, err := rf.log.term(prevLeaderLogIndex)
@@ -65,6 +68,7 @@ func (rf *Raft) mayCommittedMatched(index uint64) {
 	}
 }
 
+// index来源于leader的args,
 func (rf *Raft) mayCommittedTo(index uint64) {
 	if res := min(index, rf.log.lastIndex()); res > rf.log.committed {
 		rf.log.committedTo(res)
@@ -108,16 +112,34 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 
 		// follower更新成功,将log持久化到leader,修改leader的committed
 		rf.mayCommittedMatched(rf.peerTrackers[reply.From].matchIndex)
+
 	case IndexNotMatched:
-		fallthrough
-	case TermNotMatched:
-		rf.peerTrackers[reply.From].nextIndex -= 1
+		rf.peerTrackers[reply.From].nextIndex = reply.LastLogIndex + 1
 
 		resNext := rf.peerTrackers[reply.From].nextIndex
 		resMatch := rf.peerTrackers[reply.From].matchIndex
-		rf.logger.updateProgOf(uint64(args.From), oriNext, oriMatch, resNext, resMatch)
-	default:
-		panic("Err type invalid")
+		if resNext != oriNext || resMatch != oriMatch {
+			rf.logger.updateProgOf(uint64(reply.From), oriNext, oriMatch, resNext, resMatch)
+		}
+
+	case TermNotMatched:
+		curNextIndex := reply.FirstConflictIndex
+		for i := rf.log.lastIndex(); i > rf.log.firstIndex(); i-- {
+			if term, _ := rf.log.term(i); term == reply.ConflictTerm {
+				curNextIndex = i
+				break
+			}
+		}
+
+		// make sure nextIndex is reduced
+		rf.peerTrackers[reply.From].nextIndex = min(curNextIndex, rf.peerTrackers[reply.From].nextIndex-1)
+
+		resNext := rf.peerTrackers[reply.From].nextIndex
+		resMatch := rf.peerTrackers[reply.From].matchIndex
+
+		if resNext != oriNext || resMatch != oriMatch {
+			rf.logger.updateProgOf(uint64(reply.From), oriNext, oriMatch, resNext, resMatch)
+		}
 	}
 }
 
@@ -142,6 +164,19 @@ func (rf *Raft) broadcastAppendEntries(isForced bool) {
 			go rf.sendAppendEntriesAndHandle(args)
 		}
 	}
+}
+
+// 找到历史中给定index对应term不同的term的index
+func (rf *Raft) findFirstConflict(index uint64) (uint64, uint64) {
+	conflictTerm, _ := rf.log.term(index)
+	conflictIndex := index
+	for i := index - 1; i > rf.log.firstIndex(); i-- {
+		if term, _ := rf.log.term(i); term != conflictTerm {
+			break
+		}
+		conflictIndex = i
+	}
+	return conflictTerm, conflictIndex
 }
 
 // 在follower被调用
@@ -175,6 +210,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {
+		if reply.Err == IndexNotMatched {
+			reply.LastLogIndex = rf.log.lastIndex()
+		} else {
+			reply.ConflictTerm, reply.FirstConflictIndex = rf.findFirstConflict(args.PrevLogIndex)
+		}
+
 		rf.logger.rejectEnts(uint64(args.From))
 		return
 	}
@@ -193,6 +234,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			break
 		}
 	}
+
+	// 一般来说都是args.CommittedIndex较小
+	// 第一次appendEntry的committedIndex很小
+	// 虽然在此处CommittedIndex会被选为curLastLogIndex
+	// 但mayCommittedTo则会拒绝,因为mayCommittedTo中
+	// if res := min(index, rf.log.lastIndex()); res > rf.log.committed
+	// 存入了新entry,lastIndex必然大于curLastLogIndex
+	// 第一次过后,leader要验证quorumMatched
+	// 所以两个min达成第一次不committed,leader验证quorumMatched
+	// committed则会发生于leader第二次发送appendEntry
 	curLastLogIndex := min(args.CommittedIndex, args.PrevLogIndex+uint64(len(args.Entries)))
 	rf.mayCommittedTo(curLastLogIndex)
 }
