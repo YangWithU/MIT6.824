@@ -80,13 +80,21 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.logger.recvAENTRes(reply)
+	if len(args.Entries) > 0 {
+		rf.logger.recvAENTRes(reply)
+	} else {
+		rf.logger.recvHBETRes(reply)
+	}
 
 	rf.peerTrackers[reply.From].lastAck = time.Now()
 
 	if reply.Term > rf.currentTerm {
 		rf.becomeFollower(reply.Term)
 		rf.persist()
+		return
+	}
+
+	if reply.Term < rf.currentTerm {
 		return
 	}
 
@@ -131,8 +139,11 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			}
 		}
 
-		// make sure nextIndex is reduced
-		rf.peerTrackers[reply.From].nextIndex = min(curNextIndex, rf.peerTrackers[reply.From].nextIndex-1)
+		// seems curNextIndex << nextIndex-1
+		//if curNextIndex > rf.peerTrackers[reply.From].nextIndex-1 {
+		//	panic("conflictIndex > nextIndex-1")
+		//}
+		rf.peerTrackers[reply.From].nextIndex = curNextIndex
 
 		resNext := rf.peerTrackers[reply.From].nextIndex
 		resMatch := rf.peerTrackers[reply.From].matchIndex
@@ -207,6 +218,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Term = rf.currentTerm
 		defer rf.persist()
 	}
+	// caz we moved resetTimer out from becomeFollower
+	defer rf.resetElectionTimer()
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {

@@ -62,6 +62,7 @@ func (rf *Raft) becomeCandidate() {
 	rf.votedTo = rf.me
 	rf.logger.stateToCandidate()
 
+	rf.resetElectionTimer()
 	rf.state = Candidate
 }
 
@@ -79,9 +80,6 @@ func (rf *Raft) becomeFollower(term uint64) bool {
 		rf.state = Follower
 		rf.logger.stateToFollower(oldTerm) // should place back of rf.state & rf.currentTerm
 	}
-
-	// 刷新自己的时间记录
-	rf.resetElectionTimer()
 
 	return termChanged
 }
@@ -115,6 +113,13 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 
 	// 更新判断peer是否活跃时间戳
 	rf.peerTrackers[reply.From].lastAck = time.Now()
+
+	// term小于当前term
+	// 说明发送的Request没更新成功
+	// 或者follower根本没更新
+	if reply.Term < rf.currentTerm {
+		return
+	}
 
 	if reply.Term > rf.currentTerm {
 		rf.becomeFollower(reply.Term)
@@ -160,13 +165,6 @@ func (rf *Raft) checkCandidateLogNewer(candLastLogIndex, candLastLogTerm uint64)
 		(candLastLogTerm == lastLogTerm && candLastLogIndex >= lastLogIndex)
 }
 
-func (rf *Raft) otherMoreUpToDate(candLastLogIndex, candLastLogTerm uint64) bool {
-	lastLogIndex := rf.log.lastIndex()
-	lastLogTerm, _ := rf.log.term(lastLogIndex)
-	return candLastLogTerm > candLastLogTerm ||
-		(candLastLogTerm == lastLogTerm && candLastLogIndex > lastLogIndex)
-}
-
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -188,13 +186,16 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.becomeFollower(args.Term)
 		defer rf.persist()
 	}
+
+	// 返回的term应当是最新的term
+	// 如果reply.Term == candidate.Term
+	// 那么candidate就忽略该term
 	reply.Term = rf.currentTerm
 
-	//// 我也candidate,但request我的candidate的LastLogIndex比我的大
-	//if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
-	//	// 我选择退出
-	//	rf.becomeFollower(args.Term)
-	//}
+	// 只有follower才能投票
+	if rf.state != Follower {
+		return
+	}
 
 	// 判断能否成为 Leader
 	if (rf.votedTo == NoneVotedTo || rf.votedTo == args.From) &&

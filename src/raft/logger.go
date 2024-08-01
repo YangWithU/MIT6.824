@@ -340,6 +340,13 @@ func (l *Logger) printEnts(topic logTopic, me uint64, ents []LogEntry) {
 // heartbeat events.
 //
 
+var errMap = [...]string{
+	"RJ", // rejected.
+	"MT", // matched.
+	"IN", // index not matched.
+	"TN", // term not matched.
+}
+
 func (l *Logger) sendBeat(prevLogIndex, prevLogTerm uint64, ents []LogEntry, to uint64) {
 	r := l.r
 	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.currentTerm, r.log.committed, prevLogIndex, prevLogTerm, len(ents))
@@ -358,6 +365,12 @@ func (l *Logger) bcastHBET() {
 func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 	r := l.r
 	l.printf(BEAT, "N%v <- N%v HBET (T:%v CI:%v)", r.me, m.From, m.Term, m.CommittedIndex)
+}
+
+func (l *Logger) recvHBETRes(m *AppendEntriesReply) {
+	r := l.r
+	l.printf(LRPE, "N%v <- N%v HBET RES (T:%v E:%v CT:%v FCI:%v LI:%v)", r.me, m.From, m.Term,
+		errMap[m.Err], m.ConflictTerm, m.FirstConflictIndex, m.LastLogIndex)
 }
 
 //

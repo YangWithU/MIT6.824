@@ -57,3 +57,25 @@ type AppendEntriesReply struct {
 	FirstConflictIndex uint64
 	LogLength          uint64
 }
+
+// snapshot
+
+type InstallSnapshotArgs struct {
+	From               int
+	To                 int
+	Term               uint64
+	Err                Err
+	LastLogIndex       uint64
+	ConflictTerm       uint64
+	FirstConflictIndex uint64
+}
+
+type InstallSnapshotReply struct {
+	From               int
+	To                 int
+	Term               uint64
+	Err                Err
+	LastLogIndex       uint64
+	ConflictTerm       uint64
+	FirstConflictIndex uint64
+}

@@ -35,7 +35,7 @@ const (
 )
 
 const NoneVotedTo = -1
-const HeartbeatTimeout = 100 * time.Millisecond
+const HeartbeatTimeout = 150 * time.Millisecond
 const TickInterval = 50 * time.Millisecond
 
 // A Go object implementing a single Raft peer.
@@ -80,21 +80,14 @@ func (rf *Raft) GetState() (int, bool) {
 
 	// Your code here (2A).
 
-	return int(rf.currentTerm), rf.state == Leader
+	return int(rf.currentTerm), rf.state == Leader && !rf.killed()
 }
 
 /*
 	persist, readPersist: moved to storage.go!
 */
 
-// the service says it has created a snapshot that has
-// all info up to and including index. this means the
-// service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (2D).
-
-}
+// moved to log_compaction.go
 
 /*
 	moved to rpc.go!
@@ -227,7 +220,6 @@ func (rf *Raft) ticker() {
 				rf.logger.elecTimeout()
 				rf.becomeCandidate()
 				rf.broadcastRequestVote()
-				rf.resetElectionTimer()
 			}
 
 		case Leader:

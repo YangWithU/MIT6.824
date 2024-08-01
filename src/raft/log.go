@@ -140,8 +140,8 @@ func (log *Log) clone(entries []LogEntry) []LogEntry {
 func (log *Log) newCommittedEntries() []LogEntry {
 	start := log.toArrayIndex(log.applied + 1)
 	end := log.toArrayIndex(log.committed + 1)
-	if start > end {
-		return make([]LogEntry, 0)
+	if start >= end {
+		return nil
 	}
 	return log.clone(log.entries[start:end])
 }

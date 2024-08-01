@@ -38,4 +38,6 @@ func (rf *Raft) committer() {
 			rf.hasNewCommittedEntries.Wait()
 		}
 	}
+
+	rf.mu.Unlock()
 }
