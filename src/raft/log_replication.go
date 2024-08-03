@@ -164,8 +164,14 @@ func (rf *Raft) sendAppendEntriesAndHandle(args *AppendEntriesArgs) {
 func (rf *Raft) broadcastAppendEntries(isForced bool) {
 	rf.logger.bcastAENT()
 	for idx := range rf.peers {
-		// 查看leader是否有新的entry
-		if idx != rf.me && (isForced || rf.hasNewEntries(idx)) {
+		if idx == rf.me {
+			continue
+		}
+		if rf.lagBehindSnapshot(idx) {
+			args := rf.makeInstallSnapShotArgs(idx)
+			rf.log.logger.sendISNP(idx, args.SnapShot.Index, args.SnapShot.Term)
+			go rf.sendInstallSnapShotAndHandle(args)
+		} else if isForced || rf.hasNewEntries(idx) {
 			args := rf.makeAppendEntriesArgs(idx)
 			if len(args.Entries) > 0 {
 				rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, uint64(idx))

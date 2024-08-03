@@ -8,7 +8,9 @@ package raft
 // test with the original before submitting.
 //
 
-import "testing"
+import (
+	"testing"
+)
 import "fmt"
 import "time"
 import "math/rand"
@@ -677,6 +679,28 @@ loop:
 	if total3-total2 > 3*20 {
 		t.Fatalf("too many RPCs (%v) for 1 second of idleness\n", total3-total2)
 	}
+
+	cfg.end()
+}
+
+func TestMyTest(t *testing.T) {
+	servers := 3
+	cfg := make_config(t, servers, false, false)
+	defer cfg.cleanup()
+
+	cfg.begin("my test started")
+
+	cfg.one(11, servers, true)
+
+	for i := 0; i < servers; i++ {
+		cfg.start1(i, cfg.applier)
+	}
+	for i := 0; i < servers; i++ {
+		cfg.disconnect(i)
+		cfg.connect(i)
+	}
+
+	time.Sleep(RaftElectionTimeout)
 
 	cfg.end()
 }

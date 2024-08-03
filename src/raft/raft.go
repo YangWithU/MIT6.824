@@ -69,7 +69,7 @@ type Raft struct {
 	applyCh                chan<- ApplyMsg
 	hasNewCommittedEntries sync.Cond
 
-	logger *Logger
+	logger Logger
 }
 
 // return currentTerm and whether this server
@@ -237,6 +237,7 @@ func (rf *Raft) ticker() {
 			}
 			// 每个heartbeat,再发送一遍appendEntry
 			rf.broadcastAppendEntries(forced)
+			//rf.resetHeartbeatTimer()
 		}
 
 		rf.mu.Unlock()
@@ -266,11 +267,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyCh = applyCh
 	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
 
-	rf.logger = makeLogger(false, "new_log.txt")
+	rf.logger = *makeLogger(false, "new_log.txt")
 	rf.logger.r = rf
 
 	rf.log = makeLog()
-	rf.log.logger = rf.logger
+	rf.log.logger = &rf.logger
 
 	// 启动时读取之前存储的状态：term, votedTo, entries, committed, applied
 	if rfState := rf.persister.ReadRaftState(); len(rfState) > 0 {
@@ -280,6 +281,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		rf.currentTerm = 0
 		rf.votedTo = NoneVotedTo
 	}
+
+	rf.state = Follower
+	rf.resetElectionTimer()
 	rf.logger.stateToFollower(rf.currentTerm)
 
 	rf.peerTrackers = make([]PeerTracker, len(peers))

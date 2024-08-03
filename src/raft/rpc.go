@@ -61,21 +61,15 @@ type AppendEntriesReply struct {
 // snapshot
 
 type InstallSnapshotArgs struct {
-	From               int
-	To                 int
-	Term               uint64
-	Err                Err
-	LastLogIndex       uint64
-	ConflictTerm       uint64
-	FirstConflictIndex uint64
+	From     int
+	To       int
+	Term     uint64
+	SnapShot SnapShot
 }
 
 type InstallSnapshotReply struct {
-	From               int
-	To                 int
-	Term               uint64
-	Err                Err
-	LastLogIndex       uint64
-	ConflictTerm       uint64
-	FirstConflictIndex uint64
+	From      int
+	To        int
+	Term      uint64
+	Installed bool
 }

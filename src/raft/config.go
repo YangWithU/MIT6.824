@@ -182,6 +182,7 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 }
 
 // returns "" or error string
+// 读取snapshot,将CommandIndex,log存到cfg.lastApplied[i],cfg.logs[i]
 func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
 	if snapshot == nil {
 		log.Fatalf("nil snapshot")
@@ -244,6 +245,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			cfg.lastApplied[i] = m.CommandIndex
 			cfg.mu.Unlock()
 
+			// 时间到,写入snapshot
 			if (m.CommandIndex+1)%SnapShotInterval == 0 {
 				w := new(bytes.Buffer)
 				e := labgob.NewEncoder(w)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 )
@@ -135,6 +136,19 @@ func (logger *Logger) printf(topic logTopic, format string, a ...interface{}) {
 		time := time.Since(logger.startTime).Microseconds()
 		// e.g. 008256 VOTE ...
 		prefix := fmt.Sprintf("%010d %v ", time, string(topic))
+
+		pc, _, _, ok := runtime.Caller(1)
+		funcName := runtime.FuncForPC(pc).Name()
+		if ok {
+			for i, x := range funcName {
+				if x == ')' {
+					funcName = funcName[i+2:]
+					break
+				}
+			}
+			prefix = prefix + funcName + " | "
+		}
+
 		format = prefix + format
 		log.Printf(format, a...)
 	}
@@ -388,7 +402,7 @@ func (l *Logger) restoreLog() {
 
 func (l *Logger) persistLog() {
 	r := l.r
-	l.printf(PERS, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
+	l.printf(PERS, "N%v pslog (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
 		r.log.lastIndex(), r.log.committed, r.log.applied)
 	if logPrintEnts {
 		l.printEnts(PERS, uint64(r.me), r.log.entries)
@@ -416,23 +430,28 @@ func (l *Logger) PersistEnts(oldlastStabledIndex, lastStabledIndex uint64) {
 // 	l.printf(PEER, "N%v START (T:%v V:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo, r.log.committed, r.log.applied)
 // }
 
-// //
-// // snapshot events
-// //
+//
+// snapshot events
+//
 
-// func (l *Logger) sendSnap(to uint64, snap *pb.Snapshot) {
-// 	r := l.r
-// 	l.printf(SNAP, "N%v s-> N%v (SI:%v ST:%v)", r.me, to, snap.Metadata.Index, snap.Metadata.currentTerm)
-// }
+func (l *Logger) compactedTo(snapshotIndex, snapshotTerm uint64) {
+	r := l.r
+	lastLogIndex := r.log.lastIndex()
+	lastLogTerm, _ := r.log.term(lastLogIndex)
+	l.printf(SNAP, "N%v cp (SI:%v ST:%v LI:%v LT:%v)", r.me, snapshotIndex, snapshotTerm, lastLogIndex, lastLogTerm)
+}
 
-// func (l *Logger) recvSNAP(m pb.Message) {
-// 	r := l.r
-// 	l.printf(SNAP, "N%v <- N%v SNAP (SI:%v ST:%v)", r.me, m.From, m.Snapshot.Metadata.Index, m.Snapshot.Metadata.currentTerm)
-// }
+func (l *Logger) sendISNP(to int, snapshotIndex, snapshotTerm uint64) {
+	r := l.r
+	l.printf(SNAP, "N%v s-> N%v (SI:%v ST:%v)", r.me, to, snapshotIndex, snapshotTerm)
+}
 
-// func (l *Logger) entsAfterSnapshot() {
-// 	r := l.r
-// 	// snapshot entries.
-// 	l.printf(SNAP, "N%v ^se (LN:%v)", r.me, len(r.RaftLog.entries))
-// 	l.printEnts(SNAP, r.me, r.RaftLog.entries)
-// }
+func (l *Logger) recvISNP(m *InstallSnapshotArgs) {
+	r := l.r
+	l.printf(SNAP, "N%v <- N%v ISNP (SI:%v ST:%v)", r.me, m.From, m.SnapShot.Index, m.SnapShot.Term)
+}
+
+func (l *Logger) recvISNPRes(m *InstallSnapshotReply) {
+	r := l.r
+	l.printf(SNAP, "N%v <- N%v ISNP RES (IS:%v)", r.me, m.From, m.Installed)
+}

@@ -8,15 +8,19 @@ type LogEntry struct {
 	Data  interface{}
 }
 
+type SnapShot struct {
+	Data  []byte
+	Index uint64 // last included index
+	Term  uint64 // last included term
+}
+
 // Log manages log entries, its struct look like:
 //
 //	    snapshot /first.....applied....committed.....last
 //	-------------|--------------------------------------|
 //	  compacted           persisted log entries
 type Log struct {
-	// compacted log entries.
-	snapshotIndex uint64 // the log index of the last compacted log entry.
-	snapshotTerm  uint64 // the term of the last compacted log entry.
+	snapShot SnapShot
 
 	// persisted log entries.
 	entries []LogEntry
@@ -32,15 +36,19 @@ type Log struct {
 
 func makeLog() Log {
 	log := Log{
-		snapshotIndex: 0,
-		snapshotTerm:  0,
-		entries:       []LogEntry{},
-		applied:       0,
-		committed:     0,
+		snapShot:  SnapShot{Index: 0, Term: 0, Data: nil},
+		entries:   make([]LogEntry, 1),
+		applied:   0,
+		committed: 0,
 	}
 
-	log.entries = append(log.entries, LogEntry{Index: log.snapshotIndex, Term: log.snapshotTerm})
+	log.setDummyLogEntry()
 	return log
+}
+
+func (log *Log) setDummyLogEntry() {
+	log.entries[0].Index = log.snapShot.Index
+	log.entries[0].Term = log.snapShot.Term
 }
 
 var ErrOutOfBound = errors.New("Index out of bound")
@@ -98,9 +106,24 @@ func (log *Log) appliedTo(index uint64) {
 	log.logger.updateApplied(oriApplied)
 }
 
-func (log *Log) compactedTo(index uint64, term uint64) {
-	log.snapshotIndex = index
-	log.snapshotTerm = term
+// 压缩当前rf.log的entries
+// 给定snapshot,
+func (log *Log) toCompactSnapShot(snapshot SnapShot) {
+	snapSuffix := make([]LogEntry, 0)
+	pos := snapshot.Index + 1
+	if pos <= log.lastIndex() {
+		pos = log.toArrayIndex(pos)
+		snapSuffix = log.entries[pos:]
+	}
+
+	log.entries = append(make([]LogEntry, 1), snapSuffix...)
+	log.snapShot = snapshot
+	log.setDummyLogEntry()
+
+	log.committed = max(log.committed, log.snapShot.Index)
+	log.applied = max(log.applied, log.snapShot.Index)
+
+	log.logger.compactedTo(log.snapShot.Index, log.snapShot.Term)
 }
 
 func (log *Log) mayCommittedTo(leaderCommittedIndex uint64) {
@@ -144,4 +167,14 @@ func (log *Log) newCommittedEntries() []LogEntry {
 		return nil
 	}
 	return log.clone(log.entries[start:end])
+}
+
+func (log *Log) cloneSnapShot() SnapShot {
+	res := SnapShot{
+		Data:  make([]byte, len(log.snapShot.Data)),
+		Index: log.snapShot.Index,
+		Term:  log.snapShot.Term,
+	}
+	copy(res.Data, log.snapShot.Data)
+	return res
 }

@@ -17,14 +17,15 @@ func (rf *Raft) persist() {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
 
-	encodes := []interface{}{rf.currentTerm, rf.votedTo, rf.log.entries, rf.log.committed, rf.log.applied}
+	encodes := []interface{}{rf.currentTerm, rf.votedTo, rf.log.entries,
+		rf.log.snapShot.Index, rf.log.snapShot.Term}
 	for _, val := range encodes {
 		if e.Encode(val) != nil {
 			panic("failed to encode some rf field")
 		}
 	}
 	raftState := w.Bytes()
-	rf.persister.Save(raftState, nil)
+	rf.persister.Save(raftState, rf.log.snapShot.Data)
 
 	rf.logger.persistLog() // debug log
 }
@@ -35,12 +36,19 @@ func (rf *Raft) readPersist(data []byte) {
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
 
-	decodes := []interface{}{&rf.currentTerm, &rf.votedTo, &rf.log.entries, &rf.log.committed, &rf.log.applied}
+	decodes := []interface{}{&rf.currentTerm, &rf.votedTo, &rf.log.entries,
+		&rf.log.snapShot.Index, &rf.log.snapShot.Term}
 	for _, val := range decodes {
 		if d.Decode(val) != nil {
 			panic("failed to decode some rf field")
 		}
 	}
+
+	rf.log.toCompactSnapShot(SnapShot{
+		Data:  rf.persister.ReadSnapshot(),
+		Index: rf.log.snapShot.Index, // decode出来的index和term
+		Term:  rf.log.snapShot.Term,
+	})
 
 	rf.logger.restoreLog() // debug log
 }
