@@ -6,13 +6,14 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // true to turn on debugging/logging.
 const debug = true
 const LOGTOFILE = true
-const logPrintEnts = true
+const logPrintEnts = false
 
 // what topic the log message is related to.
 // logs are organized by topics which further consists of events.
@@ -137,20 +138,50 @@ func (logger *Logger) printf(topic logTopic, format string, a ...interface{}) {
 		// e.g. 008256 VOTE ...
 		prefix := fmt.Sprintf("%010d %v ", time, string(topic))
 
-		pc, _, _, ok := runtime.Caller(1)
-		funcName := runtime.FuncForPC(pc).Name()
-		if ok {
-			for i, x := range funcName {
+		//pc, _, _, ok := runtime.Caller(1)
+		//funcName := runtime.FuncForPC(pc).Name()
+		//if ok {
+		//	for i, x := range funcName {
+		//		if x == ')' {
+		//			*str = (*str)[i+2:]
+		//			break
+		//		}
+		//	}
+		//	prefix = prefix + funcName + " | "
+		//}
+
+		pcs := make([]uintptr, 6)
+		n := runtime.Callers(2, pcs)
+		pc := pcs[:n]
+		frames := runtime.CallersFrames(pc)
+		fNames := ""
+
+		tpre := func(str *string) {
+			for i, x := range *str {
 				if x == ')' {
-					funcName = funcName[i+2:]
+					*str = (*str)[i+2:]
 					break
 				}
 			}
-			prefix = prefix + funcName + " | "
+			if p := strings.Index(*str, "raft."); p != -1 {
+				*str = (*str)[p+5:]
+			}
+		}
+		for {
+			frame, more := frames.Next()
+			cur := frame.Function
+			tpre(&cur)
+			fNames = fNames + cur + " <- "
+			if !more {
+				break
+			}
 		}
 
 		format = prefix + format
-		log.Printf(format, a...)
+		pre := fmt.Sprintf(format, a...)
+		pre = fmt.Sprintf("%-*s", 63, pre)
+		pre = pre + "| " + fNames
+		log.Printf(pre)
 	}
 }
 
@@ -393,8 +424,8 @@ func (l *Logger) recvHBETRes(m *AppendEntriesReply) {
 
 func (l *Logger) restoreLog() {
 	r := l.r
-	l.printf(PERS, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
-		r.log.lastIndex(), r.log.committed, r.log.applied)
+	l.printf(PERS, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v SI:%v ST:%v)", r.me, r.currentTerm, r.votedTo,
+		r.log.lastIndex(), r.log.committed, r.log.applied, r.log.snapShot.Index, r.log.snapShot.Term)
 	if logPrintEnts {
 		l.printEnts(PERS, uint64(r.me), r.log.entries)
 	}
@@ -402,8 +433,8 @@ func (l *Logger) restoreLog() {
 
 func (l *Logger) persistLog() {
 	r := l.r
-	l.printf(PERS, "N%v pslog (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.currentTerm, r.votedTo,
-		r.log.lastIndex(), r.log.committed, r.log.applied)
+	l.printf(PERS, "N%v pslog (T:%v V:%v LI:%v CI:%v AI:%v SI:%v ST:%v)", r.me, r.currentTerm, r.votedTo,
+		r.log.lastIndex(), r.log.committed, r.log.applied, r.log.snapShot.Index, r.log.snapShot.Term)
 	if logPrintEnts {
 		l.printEnts(PERS, uint64(r.me), r.log.entries)
 	}
@@ -436,9 +467,8 @@ func (l *Logger) PersistEnts(oldlastStabledIndex, lastStabledIndex uint64) {
 
 func (l *Logger) compactedTo(snapshotIndex, snapshotTerm uint64) {
 	r := l.r
-	lastLogIndex := r.log.lastIndex()
-	lastLogTerm, _ := r.log.term(lastLogIndex)
-	l.printf(SNAP, "N%v cp (SI:%v ST:%v LI:%v LT:%v)", r.me, snapshotIndex, snapshotTerm, lastLogIndex, lastLogTerm)
+	l.printf(SNAP, "N%v cp (SI:%v ST:%v LI:%v LT:%v)", r.me, r.log.snapShot.Index, r.log.snapShot.Term,
+		snapshotIndex, snapshotTerm)
 }
 
 func (l *Logger) sendISNP(to int, snapshotIndex, snapshotTerm uint64) {
@@ -454,4 +484,25 @@ func (l *Logger) recvISNP(m *InstallSnapshotArgs) {
 func (l *Logger) recvISNPRes(m *InstallSnapshotReply) {
 	r := l.r
 	l.printf(SNAP, "N%v <- N%v ISNP RES (IS:%v)", r.me, m.From, m.Installed)
+}
+
+func (l *Logger) hasPendingSNP() {
+	r := l.r
+	l.printf(SNAP, "N%v has pending snapshot", r.me)
+}
+
+func (l *Logger) hasCmitEnt(nCommittedEntries []LogEntry) {
+	r := l.r
+	l.printf(SNAP, "N%v has new committed entries. LN=%v FI=%v LI=%v", r.me,
+		len(nCommittedEntries), nCommittedEntries[0].Index, nCommittedEntries[len(nCommittedEntries)-1].Index)
+}
+
+func (l *Logger) pullSnap(snapshotIndex uint64) {
+	r := l.r
+	l.printf(SNAP, "N%v pull SNP (SI:%v)", r.me, snapshotIndex)
+}
+
+func (l *Logger) pushSnap(snapshotIndex, snapshotTerm uint64) {
+	r := l.r
+	l.printf(SNAP, "N%v push SNP (SI:%v ST:%v)", r.me, snapshotIndex, snapshotTerm)
 }

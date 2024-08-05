@@ -245,7 +245,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			cfg.lastApplied[i] = m.CommandIndex
 			cfg.mu.Unlock()
 
-			// 时间到,写入snapshot
+			// 每9个Index变一下snapshot.Data
 			if (m.CommandIndex+1)%SnapShotInterval == 0 {
 				w := new(bytes.Buffer)
 				e := labgob.NewEncoder(w)

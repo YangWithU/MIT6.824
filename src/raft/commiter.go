@@ -25,7 +25,23 @@ type ApplyMsg struct {
 func (rf *Raft) committer() {
 	rf.mu.Lock()
 	for !rf.killed() {
-		if newCommittedEntries := rf.log.newCommittedEntries(); len(newCommittedEntries) > 0 {
+		if rf.log.hasPendingSnapshot {
+			rf.logger.hasPendingSNP()
+			snapshot := rf.log.cloneSnapShot()
+			rf.mu.Unlock()
+
+			rf.applyCh <- ApplyMsg{
+				SnapshotValid: true,
+				Snapshot:      snapshot.Data,
+				SnapshotTerm:  int(snapshot.Term),
+				SnapshotIndex: int(snapshot.Index),
+			}
+
+			rf.mu.Lock()
+			rf.log.hasPendingSnapshot = false
+			rf.logger.pushSnap(snapshot.Index, snapshot.Term)
+		} else if newCommittedEntries := rf.log.newCommittedEntries(); len(newCommittedEntries) > 0 {
+			rf.logger.hasCmitEnt(newCommittedEntries)
 			rf.mu.Unlock()
 
 			for _, entry := range newCommittedEntries {
@@ -33,9 +49,12 @@ func (rf *Raft) committer() {
 			}
 
 			rf.mu.Lock()
-			rf.log.appliedTo(newCommittedEntries[len(newCommittedEntries)-1].Index)
+			applied := max(rf.log.applied, newCommittedEntries[len(newCommittedEntries)-1].Index)
+			rf.log.appliedTo(applied)
 		} else {
+			rf.logger.printf(SNAP, "N%v waits", rf.me)
 			rf.hasNewCommittedEntries.Wait()
+			rf.logger.printf(SNAP, "N%v awakes", rf.me)
 		}
 	}
 

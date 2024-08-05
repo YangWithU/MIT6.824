@@ -1,6 +1,8 @@
 package raft
 
-import "errors"
+import (
+	"errors"
+)
 
 type LogEntry struct {
 	Index uint64
@@ -22,6 +24,8 @@ type SnapShot struct {
 type Log struct {
 	snapShot SnapShot
 
+	hasPendingSnapshot bool
+
 	// persisted log entries.
 	entries []LogEntry
 
@@ -36,10 +40,11 @@ type Log struct {
 
 func makeLog() Log {
 	log := Log{
-		snapShot:  SnapShot{Index: 0, Term: 0, Data: nil},
-		entries:   make([]LogEntry, 1),
-		applied:   0,
-		committed: 0,
+		snapShot:           SnapShot{Index: 0, Term: 0, Data: nil},
+		hasPendingSnapshot: false,
+		entries:            make([]LogEntry, 1),
+		applied:            0,
+		committed:          0,
 	}
 
 	log.setDummyLogEntry()
@@ -95,19 +100,24 @@ func (log *Log) slice(start, end uint64) ([]LogEntry, error) {
 }
 
 func (log *Log) committedTo(index uint64) {
-	oriCommitted := log.committed
-	log.committed = index
-	log.logger.updateCommitted(oriCommitted)
+	if index > log.committed {
+		oriCommitted := log.committed
+		log.committed = index
+		log.logger.updateCommitted(oriCommitted)
+	}
 }
 
 func (log *Log) appliedTo(index uint64) {
-	oriApplied := log.applied
-	log.applied = index
-	log.logger.updateApplied(oriApplied)
+	if index > log.applied {
+		oriApplied := log.applied
+		log.applied = index
+		log.logger.updateApplied(oriApplied)
+	}
 }
 
 // 压缩当前rf.log的entries
-// 给定snapshot,
+// 将old替换为给定snapshot,截断给定snapshot.Index+1前内容
+// 设置entry[0] dummy
 func (log *Log) toCompactSnapShot(snapshot SnapShot) {
 	snapSuffix := make([]LogEntry, 0)
 	pos := snapshot.Index + 1
@@ -120,10 +130,16 @@ func (log *Log) toCompactSnapShot(snapshot SnapShot) {
 	log.snapShot = snapshot
 	log.setDummyLogEntry()
 
-	log.committed = max(log.committed, log.snapShot.Index)
-	log.applied = max(log.applied, log.snapShot.Index)
+	if log.snapShot.Index > log.committed {
+		log.committedTo(log.snapShot.Index)
+	}
+	if log.snapShot.Index > log.applied {
+		log.appliedTo(log.snapShot.Index)
+	}
 
-	log.logger.compactedTo(log.snapShot.Index, log.snapShot.Term)
+	lastLogIndex := log.lastIndex()
+	lastLogTerm, _ := log.term(lastLogIndex)
+	log.logger.compactedTo(lastLogIndex, lastLogTerm)
 }
 
 func (log *Log) mayCommittedTo(leaderCommittedIndex uint64) {
@@ -163,6 +179,10 @@ func (log *Log) clone(entries []LogEntry) []LogEntry {
 func (log *Log) newCommittedEntries() []LogEntry {
 	start := log.toArrayIndex(log.applied + 1)
 	end := log.toArrayIndex(log.committed + 1)
+
+	log.logger.printf(SNAP, "newCommittedEntries [start=%v, end=%v) LN=%v",
+		log.applied+1, log.committed+1, len(log.entries[start:end]))
+
 	if start >= end {
 		return nil
 	}

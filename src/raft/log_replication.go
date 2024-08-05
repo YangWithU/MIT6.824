@@ -54,6 +54,11 @@ func (rf *Raft) quorumMatched(index uint64) bool {
 	return 2*matchCnt > len(rf.peers)
 }
 
+func (rf *Raft) signalAndLog() {
+	rf.hasNewCommittedEntries.Signal()
+	rf.logger.printf(SNAP, "N%v signal()", rf.me)
+}
+
 // 输入entries的index,反向遍历 (log.committed~index].
 // 假如logEntries中的term与当前rf的term相同,
 // 多半数peerTracker的matchIndex不小于当前index,
@@ -62,7 +67,7 @@ func (rf *Raft) mayCommittedMatched(index uint64) {
 	for i := index; i > rf.log.committed; i-- {
 		if term, err := rf.log.term(i); err == nil && term == rf.currentTerm && rf.quorumMatched(i) {
 			rf.log.committedTo(i)
-			rf.hasNewCommittedEntries.Signal()
+			rf.signalAndLog()
 			break
 		}
 	}
@@ -72,7 +77,7 @@ func (rf *Raft) mayCommittedMatched(index uint64) {
 func (rf *Raft) mayCommittedTo(index uint64) {
 	if res := min(index, rf.log.lastIndex()); res > rf.log.committed {
 		rf.log.committedTo(res)
-		rf.hasNewCommittedEntries.Signal()
+		rf.signalAndLog()
 	}
 }
 

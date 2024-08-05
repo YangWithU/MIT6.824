@@ -6,14 +6,21 @@ import "time"
 // all info up to and including index. this means the
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
+// 手动主动存snapshot,假如entries中存在
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	rf.logger.pullSnap(uint64(index))
+
+	if rf.log.hasPendingSnapshot {
+		return
+	}
+
 	snapshotIndex := uint64(index)
 	snapshotTerm, err := rf.log.term(snapshotIndex)
-	if err != nil && snapshotIndex > rf.log.snapShot.Index {
+	if err == nil && snapshotIndex > rf.log.snapShot.Index {
 		initialSnapShot := SnapShot{Data: snapshot, Index: snapshotIndex, Term: snapshotTerm}
 		rf.log.toCompactSnapShot(initialSnapShot)
 		rf.persist()
@@ -63,13 +70,22 @@ func (rf *Raft) handleInstallSnapShot(args *InstallSnapshotArgs, reply *InstallS
 	if rf.currentTerm != reply.Term || rf.state != Leader {
 		return
 	}
-	if args.SnapShot.Index >= rf.peerTrackers[reply.From].nextIndex {
+	if args.SnapShot.Index < rf.peerTrackers[reply.From].nextIndex {
 		return
 	}
 
-	// TODO Why?
 	if reply.Installed {
-		rf.peerTrackers[reply.From].nextIndex = args.SnapShot.Index + 1
+		oriNext := rf.peerTrackers[reply.From].nextIndex
+		oriMatch := rf.peerTrackers[reply.From].matchIndex
+
+		rf.peerTrackers[reply.From].matchIndex = args.SnapShot.Index
+		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
+
+		newNext := rf.peerTrackers[reply.From].nextIndex
+		newMatch := rf.peerTrackers[reply.From].matchIndex
+		if newNext != oriNext || newMatch != oriMatch {
+			rf.logger.updateProgOf(uint64(reply.From), oriNext, oriMatch, newNext, newMatch)
+		}
 	}
 }
 
@@ -93,12 +109,21 @@ func (rf *Raft) InstallSnapShot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		reply.Term = rf.currentTerm
 		defer rf.persist()
 	}
-	rf.resetElectionTimer()
+	defer rf.resetElectionTimer()
 
-	if args.SnapShot.Index >= rf.log.snapShot.Index {
+	if args.SnapShot.Index <= rf.log.snapShot.Index {
+		reply.Installed = true
+		return
+	}
+
+	if !rf.log.hasPendingSnapshot && args.SnapShot.Index > rf.log.snapShot.Index {
 		rf.log.toCompactSnapShot(args.SnapShot)
+		reply.Installed = true
 		if !termChanged {
-			rf.persist()
+			defer rf.persist()
 		}
 	}
+
+	rf.log.hasPendingSnapshot = true
+	rf.signalAndLog()
 }
