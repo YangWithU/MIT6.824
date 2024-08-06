@@ -274,8 +274,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.log.logger = &rf.logger
 
 	// 启动时读取之前存储的状态：term, votedTo, entries, committed, applied
-	if rfState := rf.persister.ReadRaftState(); len(rfState) > 0 {
-		rf.readPersist(rfState)
+	if rf.persister.RaftStateSize() > 0 || rf.persister.SnapshotSize() > 0 {
+		rf.readPersist(rf.persister.ReadRaftState())
 		rf.logger.restoreLog()
 	} else {
 		rf.currentTerm = 0

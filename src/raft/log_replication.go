@@ -1,9 +1,5 @@
 package raft
 
-import (
-	"time"
-)
-
 // 比较最后entries的index是否不小于peerTracker的nextIndex,不小则hasNewEntry
 func (rf *Raft) hasNewEntries(to int) bool {
 	return rf.log.lastIndex() >= rf.peerTrackers[to].nextIndex
@@ -91,23 +87,18 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		rf.logger.recvHBETRes(reply)
 	}
 
-	rf.peerTrackers[reply.From].lastAck = time.Now()
-
-	if reply.Term > rf.currentTerm {
-		rf.becomeFollower(reply.Term)
-		rf.persist()
-		return
+	msg := Message{
+		Type:         AppendReply,
+		From:         reply.From,
+		Term:         reply.Term,
+		ArgsTerm:     args.Term,
+		PrevLogIndex: args.PrevLogIndex,
 	}
-
-	if reply.Term < rf.currentTerm {
-		return
+	ok, termChanged := rf.checkMessage(msg)
+	if termChanged {
+		defer rf.persist()
 	}
-
-	if rf.currentTerm != args.Term || rf.state != Leader {
-		return
-	}
-	// 我们如果想要添加新的entry,就要保证follower的Index处于相同状态
-	if rf.peerTrackers[reply.From].nextIndex-1 != args.PrevLogIndex {
+	if !ok {
 		return
 	}
 
@@ -220,17 +211,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.To = args.From
 	reply.Err = Rejected // rejected when sender args < rf.me.term
 
-	if args.Term < rf.currentTerm {
-		return
+	msg := Message{
+		Type: Append,
+		From: args.From,
+		Term: args.Term,
 	}
-
-	termChanged := rf.becomeFollower(args.Term)
+	ok, termChanged := rf.checkMessage(msg)
 	if termChanged {
 		reply.Term = rf.currentTerm
 		defer rf.persist()
 	}
-	// caz we moved resetTimer out from becomeFollower
-	defer rf.resetElectionTimer()
+	if !ok {
+		return
+	}
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {

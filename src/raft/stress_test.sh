@@ -10,6 +10,6 @@
 #TestReliableChurn2C TestUnreliableChurn2C
 
 
-python3 dstest -r --iter $1 --workers 45 --timeout 120 --output out.log TestSnapshotBasic2D \
+python3 dstest -r --iter $1 --workers 120 --timeout 120 --output out.log TestSnapshotBasic2D \
 TestSnapshotInstall2D TestSnapshotInstallUnreliable2D TestSnapshotInstallCrash2D \
 TestSnapshotInstallUnCrash2D TestSnapshotAllCrash2D TestSnapshotInit2D

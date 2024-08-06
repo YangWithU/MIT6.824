@@ -130,12 +130,9 @@ func (log *Log) toCompactSnapShot(snapshot SnapShot) {
 	log.snapShot = snapshot
 	log.setDummyLogEntry()
 
-	if log.snapShot.Index > log.committed {
-		log.committedTo(log.snapShot.Index)
-	}
-	if log.snapShot.Index > log.applied {
-		log.appliedTo(log.snapShot.Index)
-	}
+	log.committedTo(log.snapShot.Index)
+
+	log.appliedTo(log.snapShot.Index)
 
 	lastLogIndex := log.lastIndex()
 	lastLogTerm, _ := log.term(lastLogIndex)

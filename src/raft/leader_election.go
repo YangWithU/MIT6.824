@@ -111,26 +111,20 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 
 	rf.logger.recvRVOTRes(reply)
 
-	// 更新判断peer是否活跃时间戳
-	rf.peerTrackers[reply.From].lastAck = time.Now()
-
-	// term小于当前term
-	// 说明发送的Request没更新成功
-	// 或者follower根本没更新
-	if reply.Term < rf.currentTerm {
+	msg := Message{
+		Type:     VoteReply,
+		From:     reply.From,
+		Term:     reply.Term,
+		ArgsTerm: args.Term,
+	}
+	ok, termChanged := rf.checkMessage(msg)
+	if termChanged {
+		defer rf.persist()
+	}
+	if !ok {
 		return
 	}
 
-	if reply.Term > rf.currentTerm {
-		rf.becomeFollower(reply.Term)
-		rf.persist()
-		return
-	}
-
-	// 判断能不能选我
-	if args.Term != reply.Term || rf.state != Candidate {
-		return
-	}
 	if reply.VotedTo == rf.me {
 		rf.votedMe[reply.From] = true
 		if rf.isReceivedMajority() {
@@ -152,7 +146,6 @@ func (rf *Raft) broadcastRequestVote() {
 	for idx := range rf.peers {
 		if idx != rf.me {
 			args := rf.makeRequestVoteArgs(idx)
-			//Debug(dVote, "broadcastRequestVote() %v sent %v RequestVote", rf.me, args.To)
 			go rf.sendRequestVoteAndHandle(args)
 		}
 	}
@@ -177,23 +170,17 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.Term = rf.currentTerm
 	reply.VotedTo = rf.votedTo
 
-	if args.Term < rf.currentTerm {
-		return
+	msg := Message{
+		Type: Vote,
+		From: args.From,
+		Term: args.Term,
 	}
-
-	if args.Term > rf.currentTerm {
-		// 此时修改peer的votedTo = None,term = cur, electionTimer
-		rf.becomeFollower(args.Term)
+	ok, termChanged := rf.checkMessage(msg)
+	if termChanged {
+		reply.Term = rf.currentTerm
 		defer rf.persist()
 	}
-
-	// 返回的term应当是最新的term
-	// 如果reply.Term == candidate.Term
-	// 那么candidate就忽略该term
-	reply.Term = rf.currentTerm
-
-	// 只有follower才能投票
-	if rf.state != Follower {
+	if !ok {
 		return
 	}
 
@@ -204,8 +191,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VotedTo = args.From
 		rf.logger.voteTo(args.From)
 
-		// 接收到candidate发来的voteArg就重置自己的electionTimer保证不重复竞争
-		rf.resetElectionTimer()
 	} else {
 		lastLogIndex := rf.log.lastIndex()
 		lastLogTerm, _ := rf.log.term(lastLogIndex)
