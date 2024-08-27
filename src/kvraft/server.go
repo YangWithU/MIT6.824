@@ -9,41 +9,24 @@ import (
 	"sync/atomic"
 )
 
-const Debug = false
-
-func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug {
-		log.Printf(format, a...)
-	}
-	return
-}
-
-
-type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-}
-
 type KVServer struct {
-	mu      sync.Mutex
-	me      int
-	rf      *raft.Raft
-	applyCh chan raft.ApplyMsg
-	dead    int32 // set by Kill()
+	mu        sync.Mutex
+	me        int
+	rf        *raft.Raft
+	applyCh   chan raft.ApplyMsg
+	dead      int32 // set by Kill()
+	persister *raft.Persister
 
-	maxraftstate int // snapshot if log grows this big
+	maxRaftStateSize int // snapshot if log grows this big
 
-	// Your definitions here.
-}
+	enableGc bool
 
+	db map[string]string
 
-func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
-}
+	opNotifier map[int64]*Notifier // [clerkId]
 
-func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	// max operation id among all applied operation of each clerk
+	maxClerkAppliedOpId map[int64]int // k: clerkId, v:maxOpId
 }
 
 // the tester calls Kill() when a KVServer instance won't
@@ -72,26 +55,63 @@ func (kv *KVServer) killed() bool {
 // the k/v server should store snapshots through the underlying Raft
 // implementation, which should call persister.SaveStateAndSnapshot() to
 // atomically save the Raft state along with the snapshot.
-// the k/v server should snapshot when Raft's saved state exceeds maxraftstate bytes,
-// in order to allow Raft to garbage-collect its log. if maxraftstate is -1,
+// the k/v server should snapshot when Raft's saved state exceeds maxRaftStateSize bytes,
+// in order to allow Raft to garbage-collect its log. if maxRaftStateSize is -1,
 // you don't need to snapshot.
 // StartKVServer() must return quickly, so it should start goroutines
 // for any long-running work.
-func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
+func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxRaftStateSize int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
-	labgob.Register(Op{})
+	labgob.Register(&Op{})
 
 	kv := new(KVServer)
 	kv.me = me
-	kv.maxraftstate = maxraftstate
+	kv.maxRaftStateSize = maxRaftStateSize
+	kv.persister = persister
 
-	// You may need initialization code here.
+	if kv.enableGc && persister.SnapshotSize() > 0 {
+		kv.ingestSnapshot()
+	} else {
+		kv.db = make(map[string]string)
+		kv.maxClerkAppliedOpId = make(map[int64]int)
+	}
 
+	kv.opNotifier = make(map[int64]*Notifier)
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
-	// You may need initialization code here.
+	// waits for applyCh in background
+	go kv.executor()
+
+	// cyclically propose no-op to make server catch up quickly
+	go kv.noOpTicker()
 
 	return kv
+}
+
+func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
+	log.Printf("===S%v receives Get (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
+	op := &Op{
+		Key:     args.Key,
+		OpType:  "Get",
+		OpId:    args.OpId,
+		ClerkId: args.ClerkId,
+	}
+
+	reply.Err, reply.Value = kv.waitTillAppliedOrTimeout(op)
+}
+
+func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
+	log.Printf("===S%v receives PutAppend (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
+
+	op := &Op{
+		Key:     args.Key,
+		Value:   args.Value,
+		OpType:  args.OpType,
+		OpId:    args.OpId,
+		ClerkId: args.ClerkId,
+	}
+
+	reply.Err, _ = kv.waitTillAppliedOrTimeout(op)
 }

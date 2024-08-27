@@ -375,7 +375,7 @@ func (l *Logger) updateApplied(oldApplied uint64) {
 func (l *Logger) printEnts(topic logTopic, me uint64, ents []LogEntry) {
 	for _, ent := range ents {
 		if ent.Index != 0 {
-			l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.Term, ent.Data.(int))
+			l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.Term, ent.Data)
 			//l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
 		}
 	}

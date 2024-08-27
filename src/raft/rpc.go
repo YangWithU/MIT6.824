@@ -98,14 +98,14 @@ type Message struct {
 // check term stale,
 // set follower is message.type=Append or snap.
 // return termStale, termChanged
-func (rf *Raft) checkTerm(m Message) (bool, bool) {
+func (rf *Raft) checkTerm(m Message) (ok, termChanged bool) {
 	if m.Term < rf.currentTerm {
 		return false, false
 	}
 
 	// 如果收到新message或来自leader的message: step down
 	if m.Term > rf.currentTerm || (m.Type == Append || m.Type == Snap) {
-		termChanged := rf.becomeFollower(m.Term)
+		termChanged = rf.becomeFollower(m.Term)
 		return true, termChanged
 	}
 	return true, false
@@ -166,13 +166,13 @@ func (rf *Raft) checkState(m Message) bool {
 //	if !ok {
 //		return
 //	}
-func (rf *Raft) checkMessage(m Message) (bool, bool) {
+func (rf *Raft) checkMessage(m Message) (ok, termChanged bool) {
 
 	if m.Type == VoteReply || m.Type == AppendReply || m.Type == SnapReply {
 		rf.peerTrackers[m.From].lastAck = time.Now()
 	}
 
-	ok, termChanged := rf.checkTerm(m)
+	ok, termChanged = rf.checkTerm(m)
 
 	if !ok || !rf.checkState(m) {
 		return false, termChanged

@@ -312,6 +312,7 @@ func (cfg *config) StartServer(i int) {
 	}
 	cfg.mu.Unlock()
 
+	// make KvServer and Raft cluster(rf.Make())
 	cfg.kvservers[i] = StartKVServer(ends, i, cfg.saved[i], cfg.maxraftstate)
 
 	kvsvc := labrpc.MakeService(cfg.kvservers[i])

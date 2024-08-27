@@ -62,6 +62,7 @@ func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 	return v
 }
 
+// 调用Clerk.Put并写一条OpLog,包含值和调用时间
 func Put(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) {
 	start := int64(time.Since(t0))
 	ck.Put(key, value)
@@ -265,6 +266,8 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 			if !randomkeys {
 				Put(cfg, myck, strconv.Itoa(cli), last, opLog, cli)
 			}
+
+			// 一直等done_clients成功后退出
 			for atomic.LoadInt32(&done_clients) == 0 {
 				var key string
 				if randomkeys {
@@ -272,7 +275,9 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 				} else {
 					key = strconv.Itoa(cli)
 				}
+				// x 1 0++ y
 				nv := "x " + strconv.Itoa(cli) + " " + strconv.Itoa(j) + " y"
+				// 一半概率
 				if (rand.Int() % 1000) < 500 {
 					// log.Printf("%d: client new append %v\n", cli, nv)
 					Append(cfg, myck, key, nv, opLog, cli)
@@ -285,6 +290,8 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 					// check done after Get() operations
 					Put(cfg, myck, key, nv, opLog, cli)
 					j++
+
+					// 另一半概率
 				} else {
 					// log.Printf("%d: client new get %v\n", cli, key)
 					v := Get(cfg, myck, key, opLog, cli)
@@ -345,6 +352,7 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 			// log.Printf("Check %v for client %d\n", j, i)
 			v := Get(cfg, ck, key, opLog, 0)
 			if !randomkeys {
+				// 检查是否含有要求的 x 0 j y
 				checkClntAppends(t, i, v, j)
 			}
 		}

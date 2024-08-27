@@ -59,14 +59,15 @@ func (rf *Raft) signalAndLog() {
 // 假如logEntries中的term与当前rf的term相同,
 // 多半数peerTracker的matchIndex不小于当前index,
 // 则更新log.committed为当前index
-func (rf *Raft) mayCommittedMatched(index uint64) {
+func (rf *Raft) mayCommittedMatched(index uint64) bool {
 	for i := index; i > rf.log.committed; i-- {
 		if term, err := rf.log.term(i); err == nil && term == rf.currentTerm && rf.quorumMatched(i) {
 			rf.log.committedTo(i)
 			rf.signalAndLog()
-			break
+			return true
 		}
 	}
+	return false
 }
 
 // index来源于leader的args,
@@ -115,7 +116,10 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
 
 		// follower更新成功,将log持久化到leader,修改leader的committed
-		rf.mayCommittedMatched(rf.peerTrackers[reply.From].matchIndex)
+		if matches := rf.mayCommittedMatched(rf.peerTrackers[reply.From].matchIndex); matches {
+			// 过半数match了直接发heartbeat(空AppendEntry),加速
+			rf.broadcastAppendEntries(true)
+		}
 
 	case IndexNotMatched:
 		rf.peerTrackers[reply.From].nextIndex = reply.LastLogIndex + 1

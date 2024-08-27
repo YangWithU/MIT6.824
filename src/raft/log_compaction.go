@@ -118,6 +118,6 @@ func (rf *Raft) InstallSnapShot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		defer rf.persist()
 	}
 
-	rf.log.hasPendingSnapshot = true
+	rf.log.hasPendingSnapshot = true // will be handled in committer()
 	rf.signalAndLog()
 }
