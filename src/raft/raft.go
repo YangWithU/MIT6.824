@@ -74,13 +74,14 @@ type Raft struct {
 
 // return currentTerm and whether this server
 // believes it is the leader.
-func (rf *Raft) GetState() (int, bool) {
+func (rf *Raft) GetState() (currentTerm int, isLeader bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
 	// Your code here (2A).
+	currentTerm, isLeader = int(rf.currentTerm), rf.state == Leader && !rf.killed()
 
-	return int(rf.currentTerm), rf.state == Leader && !rf.killed()
+	return
 }
 
 /*
@@ -157,11 +158,11 @@ func (rf *Raft) GetState() (int, bool) {
 // if it's ever committed. the second return value is the current
 // term. the third return value is true if this server believes it is
 // the leader.
-func (rf *Raft) Start(command interface{}) (int, int, bool) {
+func (rf *Raft) Start(command interface{}) (newEntryIndex, newEntryTerm int, isLeader bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	isLeader := rf.state == Leader && !rf.killed()
+	isLeader = rf.state == Leader && !rf.killed()
 	if !isLeader {
 		return 0, 0, false
 	}

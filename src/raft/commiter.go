@@ -49,6 +49,8 @@ func (rf *Raft) committer() {
 			}
 
 			rf.mu.Lock()
+			// figure 8
+			// leader commit log 时，只能提交自己当前 term 的 log（不能提交以前 term 的 log），不然就会引起日志冲突
 			applied := max(rf.log.applied, newCommittedEntries[len(newCommittedEntries)-1].Index)
 			rf.log.appliedTo(applied)
 		} else {

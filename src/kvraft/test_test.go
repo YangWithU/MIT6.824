@@ -1,6 +1,9 @@
 package kvraft
 
-import "6.5840/porcupine"
+import (
+	"6.5840/porcupine"
+	"log"
+)
 import "6.5840/models"
 import "testing"
 import "strconv"
@@ -117,9 +120,10 @@ func spawn_clients_and_wait(t *testing.T, cfg *config, ncli int, fn func(me int,
 	ca := make([]chan bool, ncli)
 	for cli := 0; cli < ncli; cli++ {
 		ca[cli] = make(chan bool)
-		go run_client(t, cfg, cli, ca[cli], fn)
+		go run_client(t, cfg, cli, ca[cli], fn) // 开后台g启动所有client,执行完了结果会发到ca[cli]
 	}
 	// log.Printf("spawn_clients_and_wait: waiting for clients")
+	// 有client运行失败了？
 	for cli := 0; cli < ncli; cli++ {
 		ok := <-ca[cli]
 		// log.Printf("spawn_clients_and_wait: client %d is done\n", cli)
@@ -183,7 +187,7 @@ func checkConcurrentAppends(t *testing.T, v string, counts []int) {
 func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 	defer func() { ch <- true }()
 	for atomic.LoadInt32(done) == 0 {
-		a := make([]int, cfg.n)
+		a := make([]int, cfg.n) // n=Server数量
 		for i := 0; i < cfg.n; i++ {
 			a[i] = (rand.Int() % 2)
 		}
@@ -249,21 +253,26 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 	done_partitioner := int32(0)
 	done_clients := int32(0)
 	ch_partitioner := make(chan bool)
-	clnts := make([]chan int, nclients)
+	clnts := make([]chan int, nclients) // 每个client都有一个
 	for i := 0; i < nclients; i++ {
 		clnts[i] = make(chan int)
 	}
 	for i := 0; i < 3; i++ {
-		// log.Printf("Iteration %v\n", i)
+		log.Printf("Iteration %v\n", i)
 		atomic.StoreInt32(&done_clients, 0)
 		atomic.StoreInt32(&done_partitioner, 0)
-		go spawn_clients_and_wait(t, cfg, nclients, func(cli int, myck *Clerk, t *testing.T) {
+		var fnRunClients func(cli int, myck *Clerk, t *testing.T)
+
+		// 会给5秒时间在后台跑
+		fnRunClients = func(cli int, myck *Clerk, t *testing.T) {
 			j := 0
 			defer func() {
 				clnts[cli] <- j
 			}()
 			last := "" // only used when not randomkeys
 			if !randomkeys {
+				log.Printf("C%d Put k=%v v=%v\n", cli, strconv.Itoa(cli), last)
+
 				Put(cfg, myck, strconv.Itoa(cli), last, opLog, cli)
 			}
 
@@ -280,6 +289,8 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 				// 一半概率
 				if (rand.Int() % 1000) < 500 {
 					// log.Printf("%d: client new append %v\n", cli, nv)
+					log.Printf("C%d Append v=%v\n", cli, nv)
+
 					Append(cfg, myck, key, nv, opLog, cli)
 					if !randomkeys {
 						last = NextValue(last, nv)
@@ -288,12 +299,17 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 				} else if randomkeys && (rand.Int()%1000) < 100 {
 					// we only do this when using random keys, because it would break the
 					// check done after Get() operations
+
+					log.Printf("C%d Put k=%v v=%v\n", cli, key, last)
+
 					Put(cfg, myck, key, nv, opLog, cli)
 					j++
 
 					// 另一半概率
 				} else {
 					// log.Printf("%d: client new get %v\n", cli, key)
+					log.Printf("C%d Get k=%v \n", cli, key)
+
 					v := Get(cfg, myck, key, opLog, cli)
 					// the following check only makes sense when we're not using random keys
 					if !randomkeys && v != last {
@@ -301,7 +317,10 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 					}
 				}
 			}
-		})
+		}
+
+		// 构造新client,用完即删,出错直接exit(1)
+		go spawn_clients_and_wait(t, cfg, nclients, fnRunClients)
 
 		if partitions {
 			// Allow the clients to perform some operations without interruption
@@ -326,14 +345,15 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 		}
 
 		if crash {
-			// log.Printf("shutdown servers\n")
+			log.Printf("shutdown servers\n")
+			// 把所有server关了
 			for i := 0; i < nservers; i++ {
 				cfg.ShutdownServer(i)
 			}
 			// Wait for a while for servers to shutdown, since
 			// shutdown isn't a real crash and isn't instantaneous
 			time.Sleep(electionTimeout)
-			// log.Printf("restart servers\n")
+			log.Printf("restart servers\n")
 			// crash and re-start all
 			for i := 0; i < nservers; i++ {
 				cfg.StartServer(i)
@@ -341,15 +361,15 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 			cfg.ConnectAll()
 		}
 
-		// log.Printf("wait for clients\n")
+		log.Printf("wait for clients\n")
 		for i := 0; i < nclients; i++ {
-			// log.Printf("read from clients %d\n", i)
+			log.Printf("read from clients %d\n", i)
 			j := <-clnts[i]
 			// if j < 10 {
 			// 	log.Printf("Warning: client %d managed to perform only %d put operations in 1 sec?\n", i, j)
 			// }
 			key := strconv.Itoa(i)
-			// log.Printf("Check %v for client %d\n", j, i)
+			log.Printf("Check %v for client %d\n", j, i)
 			v := Get(cfg, ck, key, opLog, 0)
 			if !randomkeys {
 				// 检查是否含有要求的 x 0 j y

@@ -81,7 +81,10 @@ type ClientEnd struct {
 // send an RPC, wait for the reply.
 // the return value indicates success; false means that
 // no reply was received from the server.
+
 func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bool {
+	// 内部有两个chan: endCh 和 replyCh
+	// 只是将 arg encode成字节，发送，等replyCh ，解析到reply
 	req := reqMsg{}
 	req.endname = e.endname
 	req.svcMeth = svcMeth
@@ -237,8 +240,8 @@ func (rn *Network) processReq(req reqMsg) {
 		// failure reply.
 		ech := make(chan replyMsg)
 		go func() {
-			r := server.dispatch(req)
-			ech <- r
+			r := server.dispatch(req) // 真正执行Call
+			ech <- r                  // 结果发到ech
 		}()
 
 		// wait for handler to return,
@@ -272,6 +275,8 @@ func (rn *Network) processReq(req reqMsg) {
 		if replyOK == false || serverDead == true {
 			// server was killed while we were waiting; return error.
 			req.replyCh <- replyMsg{false, nil}
+
+			// replyOk == true
 		} else if reliable == false && (rand.Int()%1000) < 100 {
 			// drop the reply, return as if timeout
 			req.replyCh <- replyMsg{false, nil}
@@ -310,6 +315,8 @@ func (rn *Network) processReq(req reqMsg) {
 
 // create a client end-point.
 // start the thread that listens and delivers.
+// endname: string
+
 func (rn *Network) MakeEnd(endname interface{}) *ClientEnd {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
@@ -400,6 +407,8 @@ func (rs *Server) AddService(svc *Service) {
 	rs.services[svc.name] = svc
 }
 
+// 取出方法名称
+// 调用service.dispatch,真正的执行方法: reflect.Call
 func (rs *Server) dispatch(req reqMsg) replyMsg {
 	rs.mu.Lock()
 

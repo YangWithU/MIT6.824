@@ -2,10 +2,14 @@ package kvraft
 
 import "log"
 
-func (kv *KVServer) propose(op *Op) bool {
-	_, _, isLeader := kv.rf.Start(op)
+func (kv *KVServer) propose(op *Op) (isLeader bool) {
+	index, _, isLeader := kv.rf.Start(op)
 	if isLeader {
-		log.Printf("===S%v proposes (C=%v Id=%d)", kv.me, op.ClerkId, op.OpId)
+		if kv.isNoOp(op) {
+			log.Printf("===S%v proposes no-op", kv.me)
+		} else {
+			log.Printf("===S%v proposes (C=%v Id=%d) at N=%v", kv.me, op.ClerkId, op.OpId, index)
+		}
 	}
 	return isLeader
 }

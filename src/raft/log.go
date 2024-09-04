@@ -80,6 +80,9 @@ func (log *Log) term(idx uint64) (uint64, error) {
 }
 
 func (log *Log) slice(start, end uint64) ([]LogEntry, error) {
+	if start > end {
+		return nil, ErrOutOfBound
+	}
 	if start <= log.firstIndex() {
 		return nil, ErrOutOfBound
 	}

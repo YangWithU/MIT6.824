@@ -17,10 +17,12 @@ func (kv *KVServer) isNoOp(op *Op) bool {
 }
 
 func (kv *KVServer) noOpTicker() {
-	for !kv.killed() {
-		op := &Op{OpType: "NoOp"}
-		kv.propose(op)
-
-		time.Sleep(proposeNoOpInterval)
-	}
+	//for !kv.killed() {
+	//	if kv.isLeader() {
+	//		op := &Op{OpType: "NoOp"}
+	//		kv.propose(op)
+	//	}
+	//
+	//	time.Sleep(proposeNoOpInterval)
+	//}
 }

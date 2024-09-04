@@ -188,7 +188,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if (rf.votedTo == NoneVotedTo || rf.votedTo == args.From) &&
 		rf.checkCandidateLogNewer(args.LastLogIndex, args.LastLogTerm) {
 		rf.votedTo = args.From
+		rf.resetElectionTimer() // after vote to candidate,follower must resetElectionTimer
 		reply.VotedTo = args.From
+
 		rf.logger.voteTo(args.From)
 
 	} else {

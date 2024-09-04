@@ -116,8 +116,10 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
 
 		// follower更新成功,将log持久化到leader,修改leader的committed
-		if matches := rf.mayCommittedMatched(rf.peerTrackers[reply.From].matchIndex); matches {
+		if rf.mayCommittedMatched(rf.peerTrackers[reply.From].matchIndex) {
 			// 过半数match了直接发heartbeat(空AppendEntry),加速
+			// 原本该函数就结束了,等下一个beatTimeout再让follower commit最新log
+			// 现在直接跳过beatTimeout
 			rf.broadcastAppendEntries(true)
 		}
 

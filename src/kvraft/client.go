@@ -60,15 +60,21 @@ func (ck *Clerk) Get(key string) string {
 	for {
 		for i := 0; i < len(ck.servers); i++ {
 			curServerId := (ck.leaderId + i) % len(ck.servers)
-			log.Printf("***C%v sends Get (Id=%v K=%v) to S%v",
-				args.ClerkId, args.OpId, args.Key, curServerId)
+			log.Printf("***C%v sends Get (C=%v Id=%v K=%v) to S%v",
+				args.ClerkId, args.ClerkId, args.OpId, args.Key, curServerId)
 
 			var reply GetReply
 			if ok := ck.servers[curServerId].Call("KVServer.Get", args, &reply); ok {
 				if reply.Err == OK {
+					log.Printf("***C%v receive Get Reply (C=%v Id=%v K=%v) from S%v, value=%v",
+						args.ClerkId, args.ClerkId, args.OpId, args.Key, curServerId, reply.Value)
+
 					ck.leaderId = curServerId
 					return reply.Value
 				}
+
+				log.Printf("***Err: C%v receive Get Reply (C=%v Id=%v K=%v) from S%v, Err=%v",
+					args.ClerkId, args.ClerkId, args.OpId, args.Key, curServerId, reply.Err)
 			}
 		}
 		time.Sleep(retryTimeOut)
@@ -97,15 +103,20 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	for {
 		for i := 0; i < len(ck.servers); i++ {
 			curServerId := (ck.leaderId + i) % len(ck.servers)
-			log.Printf("***C%v sends PutAppend (Id=%v T=%v K=%v V=%v) to S%v",
-				args.ClerkId, args.OpId, args.OpType, args.Key, args.Value, curServerId)
+			log.Printf("***C%v sends PutAppend (C=%v Id=%v T=%v K=%v V=%v) to S%v",
+				args.ClerkId, args.ClerkId, args.OpId, args.OpType, args.Key, args.Value, curServerId)
 
 			var reply PutAppendReply
 			if ok := ck.servers[curServerId].Call("KVServer.PutAppend", args, &reply); ok {
 				if reply.Err == OK {
+					log.Printf("***C%v receive PutAppend Reply (C=%v Id=%v T=%v K=%v V=%v) from S%v",
+						args.ClerkId, args.ClerkId, args.OpId, args.OpType, args.Key, args.Value, curServerId)
+
 					ck.leaderId = curServerId
 					return
 				}
+				log.Printf("***Err: C%v receive PutAppend Reply (C=%v Id=%v T=%v K=%v V=%v) from S%v, Err=%v",
+					args.ClerkId, args.ClerkId, args.OpId, args.OpType, args.Key, args.Value, curServerId, reply.Err)
 			}
 		}
 		time.Sleep(retryTimeOut)
